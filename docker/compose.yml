@@ -1,0 +1,16 @@
+services:
+  macroloft:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: macroloft
+    restart: unless-stopped
+    ports:
+      # all interfaces on purpose: plain HTTP stays reachable from the LAN
+      # (http://192.168.0.20:3000) alongside the tailnet HTTPS path. No auth by
+      # design, so the LAN is trusted here as well as the tailnet.
+      - "3000:3000"
+    volumes:
+      # repo data dir: sqlite db + downloaded source datasets. Imports run on
+      # the host write straight into the DB the container serves.
+      - ../data:/data
