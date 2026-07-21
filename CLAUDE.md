@@ -7,7 +7,7 @@ server, accessed over Tailscale. Australian food data (AFCD + Open Food Facts).
 ## Status
 
 Implemented and working: schema + migrations, AFCD + OFF imports, full REST API,
-MCP server (21 tools at `/mcp`), React frontend (diary, foods/meals, insights,
+MCP server (22 tools at `/mcp`), React frontend (diary, foods/meals, insights,
 weight, targets), tests (`bun test`), Docker. `docs/PLAN.md` holds the locked
 decisions; the other docs are the spec:
 
@@ -26,8 +26,12 @@ Bun · Hono · SQLite + Drizzle · React 19 + Vite + TypeScript · Tailwind v4 �
 
 ```bash
 bun install
-bun run dev            # API + MCP on :3000 (hot reload)
-bun run dev:client     # Vite dev server on :5173, proxies /api + /mcp
+bun run dev            # everything: API/MCP on :3001 + Vite on :5174, against
+                       # data/macroloft.dev.db (seeded from the real db on first
+                       # run) so it never collides with the container on :3000.
+                       # Override with API_PORT / CLIENT_PORT / DB_PATH.
+bun run dev:server     # API + MCP alone on :3000 (hot reload)
+bun run dev:client     # Vite dev server alone on :5173, proxies /api + /mcp
 bun run build          # build frontend to dist/
 bun run db:generate    # drizzle-kit generate migrations from schema
 bun run db:migrate     # apply migrations + ensure FTS

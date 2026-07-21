@@ -17,10 +17,11 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: 5173,
+    port: Number(process.env.CLIENT_PORT ?? 5173),
     proxy: {
-      "/api": "http://localhost:3000",
-      "/mcp": "http://localhost:3000",
+      // API_PORT lets a dev server run alongside the container on :3000
+      "/api": `http://localhost:${process.env.API_PORT ?? 3000}`,
+      "/mcp": `http://localhost:${process.env.API_PORT ?? 3000}`,
     },
   },
 });

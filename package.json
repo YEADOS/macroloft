@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --hot src/server/index.ts",
+    "dev": "bun run scripts/dev.ts",
+    "dev:server": "bun run --hot src/server/index.ts",
     "dev:client": "vite",
     "build": "vite build",
     "start": "NODE_ENV=production bun run src/server/index.ts",
