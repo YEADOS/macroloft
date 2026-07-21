@@ -17,6 +17,7 @@ to use each tool, and search results include ids ready to pass to `log_food`.
 | `recent_foods` | limit=20, slot? | Most recently logged foods, newest first, with the quantity used last time and how often logged. The "the usual" / "same as yesterday" tool — gives food id + typical portion in one call. |
 | `get_food` | id or barcode | Full detail incl. micros and servings. |
 | `create_food` | name, per-100g nutrients, optional brand/barcode/servings | Creates a custom food. |
+| `add_serving` | food_id, name, grams | Adds a named serving to any food, AFCD/OFF included (servings are user data; only nutrient rows are read-only). Duplicate names rejected. |
 
 ## Diary
 

@@ -87,6 +87,20 @@ export function buildMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "add_serving",
+    {
+      description:
+        "Add a named serving to an existing food — works on database (AFCD/OFF) foods too, since servings are user data. E.g. add '1 rice cake' = 9 g so log_food can take serving {name: '1 rice cake', count: 4}. Fails if the food already has a serving with that name.",
+      inputSchema: {
+        foodId: z.number().int(),
+        name: z.string().describe("e.g. '1 piece', '1 scoop', '1 rice cake'"),
+        grams: z.number().positive(),
+      },
+    },
+    ({ foodId, name, grams }) => json(foods.addServing(foodId, name, grams)),
+  );
+
+  server.registerTool(
     "log_food",
     {
       description:

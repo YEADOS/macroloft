@@ -56,6 +56,10 @@ api.get("/foods/:id", (c) => {
 api.post("/foods", zValidator("json", foodBody), (c) =>
   c.json(foods.createCustomFood(c.req.valid("json")), 201),
 );
+api.post("/foods/:id/servings", zValidator("json", servingSchema), (c) => {
+  const { name, grams } = c.req.valid("json");
+  return c.json(foods.addServing(Number(c.req.param("id")), name, grams), 201);
+});
 api.patch("/foods/:id", zValidator("json", foodBody.partial()), (c) =>
   c.json(foods.updateCustomFood(Number(c.req.param("id")), c.req.valid("json"))),
 );

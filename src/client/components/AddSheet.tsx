@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
+  apiAddServing,
   apiBarcode,
   apiCreateFood,
   apiLogFood,
@@ -73,12 +75,19 @@ function QuantityPicker({
 }) {
   // Default to the product's serving when it has one — a packet's own portion
   // is nearly always what you want, and 100 g rarely is.
+  const [servings, setServings] = useState(food.servings);
   const [servingIdx, setServingIdx] = useState<number>(
     initialGrams == null && food.servings.length > 0 ? 0 : -1,
   );
   const [grams, setGrams] = useState(String(initialGrams ?? 100));
   const [count, setCount] = useState("1");
-  const serving = servingIdx >= 0 ? food.servings[servingIdx] : undefined;
+  // "+ new serving" mini-form
+  const [addingServing, setAddingServing] = useState(false);
+  const [nsName, setNsName] = useState("");
+  const [nsGrams, setNsGrams] = useState("");
+  const [nsError, setNsError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const serving = servingIdx >= 0 ? servings[servingIdx] : undefined;
   const effectiveG = serving ? serving.grams * (Number(count) || 1) : Number(grams) || 0;
   const scale = effectiveG / 100;
 
@@ -93,22 +102,37 @@ function QuantityPicker({
       <div className="text-sm font-medium">{food.name}</div>
       {food.brand && <div className="font-mono text-[11px] text-muted">{food.brand}</div>}
       <div className="mt-3 flex flex-wrap items-end gap-3">
-        {food.servings.length > 0 && (
+        {servings.length > 0 && (
           <label className="flex flex-col gap-1">
             <span className="plaque">Serving</span>
             <select
-              value={servingIdx}
-              onChange={(e) => setServingIdx(Number(e.target.value))}
+              value={addingServing ? -2 : servingIdx}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (v === -2) return setAddingServing(true);
+                setAddingServing(false);
+                setServingIdx(v);
+              }}
               className="max-w-[15rem] text-sm"
             >
-              {food.servings.map((s, i) => (
+              {servings.map((s, i) => (
                 <option key={s.id} value={i}>
                   {s.name} — {g(s.grams)}g
                 </option>
               ))}
               <option value={-1}>grams…</option>
+              <option value={-2}>＋ new serving…</option>
             </select>
           </label>
+        )}
+        {servings.length === 0 && !addingServing && (
+          <button
+            onClick={() => setAddingServing(true)}
+            className="border rule px-2.5 py-2 font-mono text-xs text-muted active:bg-raised md:hover:text-ink"
+            title="Save a named portion for this food"
+          >
+            ＋ serving
+          </button>
         )}
         {serving ? (
           <label className="flex flex-col gap-1">
@@ -139,6 +163,75 @@ function QuantityPicker({
           P{g(food.proteinG * scale)} C{g(food.carbsG * scale)} F{g(food.fatG * scale)}
         </div>
       </div>
+      {addingServing && (
+        <div className="mt-3 border rule bg-raised/40 p-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="plaque">Serving name</span>
+              <input
+                value={nsName}
+                onChange={(e) => setNsName(e.target.value)}
+                placeholder="1 rice cake"
+                className="text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="plaque">Grams</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={nsGrams}
+                onChange={(e) => setNsGrams(e.target.value)}
+                className="w-20 font-mono text-sm"
+              />
+            </label>
+            <div className="flex gap-1.5">
+              <button
+                disabled={!nsName.trim() || !(Number(nsGrams) > 0)}
+                onClick={async () => {
+                  try {
+                    const updated = await apiAddServing(food.id, {
+                      name: nsName.trim(),
+                      grams: Number(nsGrams),
+                    });
+                    setServings(updated.servings);
+                    setServingIdx(
+                      updated.servings.findIndex(
+                        (s) => s.name.toLowerCase() === nsName.trim().toLowerCase(),
+                      ),
+                    );
+                    setCount("1");
+                    setAddingServing(false);
+                    setNsName("");
+                    setNsGrams("");
+                    setNsError(null);
+                    // Cached search/recent rows carry servings — refresh them.
+                    for (const k of ["search", "recent", "food"])
+                      qc.invalidateQueries({ queryKey: [k] });
+                  } catch (e) {
+                    setNsError((e as Error).message);
+                  }
+                }}
+                className="px-4 py-2 font-display text-xs font-bold uppercase tracking-wider disabled:opacity-40"
+                style={{ background: "var(--accent)", color: "#181614" }}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => { setAddingServing(false); setNsError(null); }}
+                className="border rule px-3 py-2 font-mono text-xs text-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+          {nsError && (
+            <div className="mt-2 font-mono text-xs" style={{ color: "var(--accent-2)" }}>
+              {nsError}
+            </div>
+          )}
+        </div>
+      )}
       <div className="mt-3 flex flex-wrap gap-1.5">
         {serving
           ? ["0.5", "1", "1.5", "2", "3"].map((n) => (
@@ -209,7 +302,7 @@ export default function AddSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const search = useFoodSearch(q);
-  const recent = useRecentFoods(slot);
+  const recent = useRecentFoods();
   const meals = useMeals();
 
   const pick = (f: Food, portionG?: number) => {
@@ -223,8 +316,21 @@ export default function AddSheet({
   const [qf, setQf] = useState("");
   const [qlabel, setQlabel] = useState("");
 
-  // new food tab state
-  const [nf, setNf] = useState({ name: "", brand: "", protein: "", carbs: "", fat: "", kcal: "" });
+  // new food tab state — macros are entered per 100 g or per serving; the DB
+  // always stores per 100 g, so serving-basis inputs get converted on create.
+  const [nf, setNf] = useState({
+    name: "",
+    brand: "",
+    protein: "",
+    carbs: "",
+    fat: "",
+    kcal: "",
+    basis: "100g" as "100g" | "serving",
+    servingG: "",
+    itemsPer: "",
+  });
+  const perServing = nf.basis === "serving";
+  const servingG = Number(nf.servingG) || 0;
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -330,7 +436,7 @@ export default function AddSheet({
               </div>
             ) : (
               <div className="mt-2">
-                <div className="plaque py-2">Recent · {slot}</div>
+                <div className="plaque py-2">Recent</div>
                 {recent.data?.map((r) => (
                   <FoodRow
                     key={r.food.id}
@@ -428,7 +534,50 @@ export default function AddSheet({
 
         {tab === "new" && (
           <div className="mt-4 space-y-3">
-            <div className="plaque">Per 100 g</div>
+            <div className="flex items-center gap-3">
+              <span className="plaque">Nutrients are</span>
+              <div className="inline-flex border rule font-mono text-[11px]">
+                {(
+                  [
+                    ["100g", "Per 100 g"],
+                    ["serving", "Per serving"],
+                  ] as const
+                ).map(([b, label]) => (
+                  <button
+                    key={b}
+                    onClick={() => setNf({ ...nf, basis: b })}
+                    className={`px-3 py-1.5 ${nf.basis === b ? "bg-raised text-ink" : "text-muted"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {perServing && (
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="plaque">Serving size (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={nf.servingG}
+                    onChange={(e) => setNf({ ...nf, servingG: e.target.value })}
+                    className="font-mono"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="plaque">Items per serving (optional)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={nf.itemsPer}
+                    onChange={(e) => setNf({ ...nf, itemsPer: e.target.value })}
+                    placeholder="e.g. 3 rice cakes"
+                    className="font-mono"
+                  />
+                </label>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <label className="col-span-2 flex flex-col gap-1">
                 <span className="plaque">Name</span>
@@ -462,24 +611,39 @@ export default function AddSheet({
               ))}
             </div>
             <button
-              disabled={busy || !nf.name}
+              disabled={busy || !nf.name || (perServing && servingG <= 0)}
               onClick={() =>
                 run(async () => {
+                  const r1 = (n: number) => Math.round(n * 10) / 10;
+                  const factor = perServing ? 100 / servingG : 1;
+                  const items = Math.floor(Number(nf.itemsPer)) || 0;
+                  const servings = perServing
+                    ? [
+                        { name: "1 serving", grams: servingG },
+                        ...(items >= 2 ? [{ name: "1 piece", grams: r1(servingG / items) }] : []),
+                      ]
+                    : undefined;
                   const food = await apiCreateFood({
                     name: nf.name,
                     brand: nf.brand || undefined,
-                    energyKcal: nf.kcal ? Number(nf.kcal) : undefined,
-                    proteinG: Number(nf.protein) || 0,
-                    carbsG: Number(nf.carbs) || 0,
-                    fatG: Number(nf.fat) || 0,
+                    energyKcal: nf.kcal ? r1(Number(nf.kcal) * factor) : undefined,
+                    proteinG: r1((Number(nf.protein) || 0) * factor),
+                    carbsG: r1((Number(nf.carbs) || 0) * factor),
+                    fatG: r1((Number(nf.fat) || 0) * factor),
+                    servings,
                   });
-                  await apiLogFood({ foodId: food.id, quantityG: 100, slot, date });
+                  await apiLogFood({
+                    foodId: food.id,
+                    quantityG: perServing ? servingG : 100,
+                    slot,
+                    date,
+                  });
                 })
               }
-              className="glow w-full py-2.5 font-display text-sm font-bold uppercase tracking-wider"
+              className="glow w-full py-2.5 font-display text-sm font-bold uppercase tracking-wider disabled:opacity-40"
               style={{ background: "var(--accent)", color: "#181614" }}
             >
-              Create & log 100 g
+              {perServing ? "Create & log 1 serving" : "Create & log 100 g"}
             </button>
           </div>
         )}

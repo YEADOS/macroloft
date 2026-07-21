@@ -7,6 +7,8 @@
 /* ── Industrial loft tokens ─────────────────────────────────────────── */
 :root,
 :root[data-theme="dark"] {
+  /* native widgets (select popups, date pickers) must match the theme */
+  color-scheme: dark;
   --bg: #181614;
   --surface: #211e1b;
   --surface-raised: #2a2622;
@@ -25,6 +27,7 @@
 }
 
 :root[data-theme="light"] {
+  color-scheme: light;
   --bg: #f0ece4;
   --surface: #faf7f0;
   --surface-raised: #ffffff;

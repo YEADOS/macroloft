@@ -21,34 +21,64 @@ export type NutrMode = "macros" | "nutrients";
 
 const isDefaultSlot = (name: string) => (DEFAULT_SLOTS as readonly string[]).includes(name);
 
-/** The three per-row numbers: P/C/F in macro mode, fibre/sugars/sodium in nutrient mode. */
-function MacroCells({
-  t,
-  mode,
-  strong,
-}: {
-  t: Pick<Totals, "proteinG" | "carbsG" | "fatG" | "fibreG" | "sugarsG" | "sodiumMg">;
-  mode: NutrMode;
-  strong?: boolean;
-}) {
-  const cells: [string, string, string][] =
-    mode === "macros"
-      ? [
-          ["P", g(t.proteinG), "var(--chart-protein)"],
-          ["C", g(t.carbsG), "var(--chart-carbs)"],
-          ["F", g(t.fatG), "var(--chart-fat)"],
-        ]
-      : [
-          ["FB", g(t.fibreG), "var(--text-muted)"],
-          ["SU", g(t.sugarsG), "var(--text-muted)"],
-          ["NA", `${Math.round(t.sodiumMg)}`, "var(--text-muted)"],
-        ];
+type MacroSource = Pick<Totals, "proteinG" | "carbsG" | "fatG" | "fibreG" | "sugarsG" | "sodiumMg">;
+
+function macroCells(t: MacroSource, mode: NutrMode): [string, string, string, string][] {
+  return mode === "macros"
+    ? [
+        ["P", g(t.proteinG), "var(--chart-protein)", "g"],
+        ["C", g(t.carbsG), "var(--chart-carbs)", "g"],
+        ["F", g(t.fatG), "var(--chart-fat)", "g"],
+      ]
+    : [
+        ["FB", g(t.fibreG), "var(--line)", "g"],
+        ["SU", g(t.sugarsG), "var(--line)", "g"],
+        ["NA", `${Math.round(t.sodiumMg)}`, "var(--line)", "mg"],
+      ];
+}
+
+/** Per-entry numbers: one row of values, aligned under the section's column headers. */
+function MacroCells({ t, mode }: { t: MacroSource; mode: NutrMode }) {
   return (
-    <span className={`inline-flex gap-2 font-mono ${strong ? "text-xs" : "text-[11px]"}`}>
-      {cells.map(([label, value, color]) => (
-        <span key={label} className="min-w-[2.4rem] text-right">
-          <span style={{ color }}>{label}</span>
-          <span className={strong ? "text-ink" : ""}>{value}</span>
+    <span className="grid grid-cols-3 gap-x-3 text-right font-mono text-xs">
+      {macroCells(t, mode).map(([label, value]) => (
+        <span key={label} className="min-w-[2.5rem]">
+          {value}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** One header row per section, above the first entry: P/C/F (or FB/SU/NA) + kcal. */
+function MacroHeader({ mode }: { mode: NutrMode }) {
+  const labels = mode === "macros" ? ["P", "C", "F"] : ["FB", "SU", "NA"];
+  return (
+    <div className="flex items-center justify-end gap-3 pb-1.5 font-mono text-[9px] uppercase tracking-wider text-muted">
+      <span className="grid grid-cols-3 gap-x-3 text-right">
+        {labels.map((l) => (
+          <span key={l} className="min-w-[2.5rem]">
+            {l}
+          </span>
+        ))}
+      </span>
+      <span className="w-11 text-right">kcal</span>
+    </div>
+  );
+}
+
+/** Section totals: the legend-style strip — colored swatch, label, number. */
+function SlotTotals({ t, mode }: { t: MacroSource; mode: NutrMode }) {
+  return (
+    <span className="inline-flex items-center gap-4 border rule bg-surface px-3.5 py-1.5 font-mono text-[11px] text-muted">
+      {macroCells(t, mode).map(([label, value, color, unit]) => (
+        <span key={label} className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2" style={{ background: color }} />
+          <span className="uppercase">{label}</span>
+          <span className="font-medium text-ink">
+            {value}
+            <span className="font-normal text-muted">{unit}</span>
+          </span>
         </span>
       ))}
     </span>
@@ -97,7 +127,6 @@ function EntryEditor({
           <label className="flex flex-col gap-1">
             <span className="plaque">Amount</span>
             <input
-              autoFocus
               type="number"
               inputMode="decimal"
               value={amount}
@@ -223,7 +252,7 @@ function EntryRow({
     <div>
       <button
         onClick={() => setOpen(!open)}
-        className={`flex min-h-[44px] w-full items-center justify-between gap-3 py-2 text-left active:bg-raised ${
+        className={`flex min-h-[48px] w-full items-center justify-between gap-3 py-2.5 text-left active:bg-raised ${
           open ? "bg-raised/50" : ""
         }`}
       >
@@ -265,7 +294,7 @@ function AddSection({ onCreated }: { onCreated: (slot: DiarySlot) => void }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mt-4 w-full border border-dashed rule py-2.5 font-mono text-xs text-muted hover:text-ink"
+        className="mt-6 w-full border border-dashed rule py-3 font-mono text-xs text-muted hover:text-ink"
       >
         + section
       </button>
@@ -333,8 +362,9 @@ export default function Diary() {
   const [mode, setMode] = useState<NutrMode>(
     () => (localStorage.getItem("nutrMode") as NutrMode) ?? "macros",
   );
-  // One-off sections created this session: keep them visible while empty.
-  const [ephemeral, setEphemeral] = useState<DiarySlot[]>([]);
+  // One-off sections created this session: keep each visible (while empty) only
+  // on the day it was created for — that's the whole point of non-permanent.
+  const [ephemeral, setEphemeral] = useState<{ slot: DiarySlot; forDate: string }[]>([]);
   const day = useDay(date);
   const qc = useQueryClient();
   const refresh = () => {
@@ -350,13 +380,15 @@ export default function Diary() {
   const slotList: DiarySlot[] = day.data
     ? [
         ...day.data.slotList,
-        ...ephemeral.filter((e) => !day.data!.slotList.some((s) => s.name === e.name)),
+        ...ephemeral
+          .filter((e) => e.forDate === date && !day.data!.slotList.some((s) => s.name === e.slot.name))
+          .map((e) => e.slot),
       ]
     : [];
 
   return (
     <div>
-      <header className="mb-6 flex items-center justify-between gap-3">
+      <header className="mb-8 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="plaque">Diary</div>
           <h1 className="truncate font-display text-3xl font-black tracking-tight">
@@ -388,7 +420,7 @@ export default function Diary() {
       {day.data && <DayGauge day={day.data} mode={mode} />}
 
       {day.data && (
-        <div className="mt-3 flex justify-end">
+        <div className="mt-5 flex justify-end">
           <div className="inline-flex border rule font-mono text-[11px]">
             {(
               [
@@ -411,48 +443,48 @@ export default function Diary() {
       )}
 
       {day.data && (
-        <div className="mt-1">
+        <div className="mt-3">
           {slotList.map((slot) => {
             const entries = day.data!.slots[slot.name] ?? [];
             const t = day.data!.slotTotals[slot.name];
             const removable = !isDefaultSlot(slot.name) && entries.length === 0 && slot.id > 0;
             return (
-              <section key={slot.name} className="border-b rule py-4">
+              <section key={slot.name} className="border-b rule py-6">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="plaque flex items-center gap-2 !text-ink">
+                  <h2 className="flex items-center gap-2.5 font-display text-base font-black uppercase tracking-wider">
                     {slot.name}
                     {removable && (
                       <button
                         onClick={async () => {
                           await apiDeleteSlot(slot.id);
-                          setEphemeral((e) => e.filter((s) => s.id !== slot.id));
+                          setEphemeral((e) => e.filter((s) => s.slot.id !== slot.id));
                           refresh();
                         }}
                         title={`Remove ${slot.name}`}
-                        className="font-mono text-[11px] text-muted hover:text-[var(--accent-2)]"
+                        className="font-sans text-[11px] font-normal normal-case tracking-normal text-muted hover:text-[var(--accent-2)]"
                       >
                         remove
                       </button>
                     )}
                   </h2>
-                  <div className="flex items-center gap-3">
-                    {entries.length > 0 && t && (
-                      <span className="inline-flex items-baseline gap-3">
-                        <MacroCells t={t} mode={mode} strong />
-                        <span className="w-11 text-right font-mono text-sm font-semibold text-amber">
-                          {kcal(t.energyKcal)}
-                        </span>
-                      </span>
-                    )}
-                    <button
-                      onClick={() => setAdding(slot.name)}
-                      className="border rule px-3.5 py-1.5 font-mono text-sm text-amber active:bg-raised md:hover:glow"
-                    >
-                      +
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setAdding(slot.name)}
+                    className="border rule px-3.5 py-1.5 font-mono text-sm text-amber active:bg-raised md:hover:glow"
+                  >
+                    +
+                  </button>
                 </div>
-                <div className="mt-1 divide-y divide-[var(--line)]/50">
+                {entries.length > 0 && t && (
+                  <div className="mt-3 flex items-center justify-between gap-3 pb-2">
+                    <span className="font-mono text-sm font-semibold text-amber">
+                      {kcal(t.energyKcal)}{" "}
+                      <span className="text-[11px] font-normal text-muted">kcal</span>
+                    </span>
+                    <SlotTotals t={t} mode={mode} />
+                  </div>
+                )}
+                <div className="mt-2 divide-y divide-[var(--line)]/50">
+                  {entries.length > 0 && <MacroHeader mode={mode} />}
                   {entries.map((e) => (
                     <EntryRow key={e.id} entry={e} slots={slotList} mode={mode} onChanged={refresh} />
                   ))}
@@ -463,7 +495,7 @@ export default function Diary() {
 
           <AddSection
             onCreated={(slot) => {
-              if (!slot.permanent) setEphemeral((e) => [...e, slot]);
+              if (!slot.permanent) setEphemeral((e) => [...e, { slot, forDate: date }]);
               refresh();
             }}
           />

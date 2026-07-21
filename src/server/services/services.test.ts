@@ -37,6 +37,16 @@ describe("foods", () => {
     expect(f.servings).toHaveLength(1);
   });
 
+  test("addServing works on any food and rejects duplicate names", () => {
+    const whey = foods.searchFoods("whey scoop")[0]!;
+    const updated = foods.addServing(whey.id, "1 heap", 45);
+    expect(updated.servings.map((s) => s.name)).toContain("1 heap");
+    expect(() => foods.addServing(whey.id, "1 HEAP", 45)).toThrow(/already has a serving/);
+    // logging by the new serving name resolves grams
+    const e = diary.logFood({ foodId: whey.id, serving: { name: "1 heap" }, slot: "lunch", date: "2026-07-05" });
+    expect(e.quantityG).toBe(45);
+  });
+
   test("fts search finds by partial name", () => {
     const hits = foods.searchFoods("whey sc");
     expect(hits.map((h) => h.name)).toContain("Whey Scoop");

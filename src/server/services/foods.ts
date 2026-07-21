@@ -221,6 +221,21 @@ export function updateCustomFood(
   return getFood(id)!;
 }
 
+/**
+ * Add a named serving to any food, including AFCD/OFF ones — servings are user
+ * data layered on top; only the nutrient rows themselves are read-only.
+ */
+export function addServing(foodId: number, name: string, grams: number): FoodWithServings {
+  const food = getFood(foodId);
+  if (!food) throw new Error(`no food with id ${foodId}; use search_foods first`);
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("serving name can't be empty");
+  if (food.servings.some((s) => s.name.toLowerCase() === trimmed.toLowerCase()))
+    throw new Error(`"${food.name}" already has a serving named "${trimmed}"`);
+  db.insert(foodServings).values({ foodId, name: trimmed, grams }).run();
+  return getFood(foodId)!;
+}
+
 export function deleteCustomFood(id: number) {
   const existing = getFood(id);
   if (!existing) throw new Error(`no food with id ${id}`);

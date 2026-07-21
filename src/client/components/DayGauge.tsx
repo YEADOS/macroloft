@@ -15,7 +15,8 @@ function MacroBar({
   const pct = target ? Math.min(100, (eaten / target) * 100) : 0;
   return (
     <div className="flex-1">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+      {/* stacked on mobile (wrap made short labels inline and long ones not), inline on md+ */}
+      <div className="flex flex-col md:flex-row md:items-baseline md:justify-between md:gap-x-2">
         <span className="plaque" style={{ color }}>
           {label}
         </span>
@@ -64,7 +65,7 @@ export default function DayGauge({
   const pct = target ? Math.min(100, (eaten / target) * 100) : 0;
 
   return (
-    <section className="border-b rule pb-6">
+    <section className="border-b rule pb-8">
       <div className="flex items-end justify-between">
         <div>
           <div className="plaque">{over ? "Over target" : "Remaining"}</div>
@@ -98,7 +99,7 @@ export default function DayGauge({
       </div>
 
       {mode === "macros" ? (
-        <div className="mt-5 flex gap-6">
+        <div className="mt-6 flex gap-6">
           <MacroBar
             label="Protein"
             eaten={day.totals.proteinG}

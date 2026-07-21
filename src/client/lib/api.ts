@@ -211,6 +211,9 @@ export const apiCreateFood = (input: object) =>
 
 export const apiBarcode = (code: string) => http<Food>(`/foods/barcode/${code}`);
 
+export const apiAddServing = (foodId: number, input: { name: string; grams: number }) =>
+  http<Food>(`/foods/${foodId}/servings`, { method: "POST", body: JSON.stringify(input) });
+
 export const apiCreateMeal = (input: { name: string; items: { foodId: number; quantityG: number }[]; notes?: string }) =>
   http<MealSummary>("/meals", { method: "POST", body: JSON.stringify(input) });
 
