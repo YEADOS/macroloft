@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import type { Day } from "../lib/api";
 import { kcal, g } from "../lib/format";
+import { funEquivalent, shuffledOrder } from "../lib/equivalents";
 
 function MacroBar({
   label,
@@ -51,6 +53,49 @@ function NutrientTile({ label, value, unit }: { label: string; value: number; un
   );
 }
 
+function FunUnits({ remaining, over }: { remaining: number; over: boolean }) {
+  const [line, setLine] = useState<string | null>(null);
+  const order = useRef<number[]>([]);
+  const step = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const next = () => {
+    if (step.current >= order.current.length) {
+      order.current = shuffledOrder();
+      step.current = 0;
+    }
+    setLine(funEquivalent(remaining, order.current[step.current]!));
+    step.current++;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setLine(null), 6000);
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={next}
+        aria-label="Show remaining calories as fun units"
+        className="block text-left font-display text-7xl font-black leading-none tracking-tight md:text-8xl"
+        style={{ color: over ? "var(--accent-2)" : "var(--text)" }}
+      >
+        {kcal(Math.abs(remaining))}
+      </button>
+      {line && (
+        <div
+          role="status"
+          className="fun-units mt-2 inline-block border rule bg-raised px-3 py-2"
+        >
+          <div className="plaque">{over ? "Over by" : "That's"}</div>
+          <div className="font-mono text-sm">{line}</div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function DayGauge({
   day,
   mode = "macros",
@@ -69,12 +114,13 @@ export default function DayGauge({
       <div className="flex items-end justify-between">
         <div>
           <div className="plaque">{over ? "Over target" : "Remaining"}</div>
-          <div
-            className="font-display text-7xl font-black leading-none tracking-tight md:text-8xl"
-            style={{ color: over ? "var(--accent-2)" : "var(--text)" }}
-          >
-            {remaining !== null ? kcal(Math.abs(remaining)) : kcal(eaten)}
-          </div>
+          {remaining !== null ? (
+            <FunUnits remaining={remaining} over={over} />
+          ) : (
+            <div className="font-display text-7xl font-black leading-none tracking-tight md:text-8xl">
+              {kcal(eaten)}
+            </div>
+          )}
         </div>
         <div className="pb-1 text-right font-mono text-xs text-muted">
           <div>
