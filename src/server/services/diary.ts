@@ -1,9 +1,10 @@
 import { and, eq, gte, lte } from "drizzle-orm";
 import { db } from "../db/client";
 import { diaryEntries, mealItems, meals, type DiaryEntry, type Goal } from "../db/schema";
-import { kcalFromMacros, per100, round1, SLOTS, type Slot } from "../../shared/nutrition";
+import { kcalFromMacros, per100, round1, type Slot } from "../../shared/nutrition";
 import { bumpUsage, getFood } from "./foods";
 import { getGoals } from "./goals";
+import { listSlots, validateSlot } from "./slots";
 import { today } from "./settings";
 
 export interface LogFoodInput {
@@ -39,7 +40,7 @@ export function logFood(input: LogFoodInput): DiaryEntry {
     .insert(diaryEntries)
     .values({
       date: input.date ?? today(),
-      slot: input.slot,
+      slot: validateSlot(input.slot),
       kind: "food",
       foodId: food.id,
       quantityG,
@@ -74,7 +75,7 @@ export function logQuick(input: LogQuickInput): DiaryEntry {
     .insert(diaryEntries)
     .values({
       date: input.date ?? today(),
-      slot: input.slot,
+      slot: validateSlot(input.slot),
       kind: "quick",
       label: input.label ?? null,
       energyKcal:
@@ -129,7 +130,7 @@ export function updateEntry(id: number, patch: UpdateEntryInput): DiaryEntry {
   const entry = db.select().from(diaryEntries).where(eq(diaryEntries.id, id)).get();
   if (!entry) throw new Error(`no diary entry with id ${id}`);
   const set: Partial<DiaryEntry> = {};
-  if (patch.slot) set.slot = patch.slot;
+  if (patch.slot) set.slot = validateSlot(patch.slot);
   if (patch.date) set.date = patch.date;
   if (patch.label !== undefined) set.label = patch.label;
   if (patch.quantityG != null) {
@@ -167,6 +168,8 @@ export interface DayTotals {
   proteinG: number;
   carbsG: number;
   fatG: number;
+  satFatG: number;
+  sugarsG: number;
   fibreG: number;
   sodiumMg: number;
 }
@@ -192,6 +195,8 @@ function withFoodNames(entries: DiaryEntry[]): EntryWithFood[] {
 
 export interface DaySummary {
   date: string;
+  /** Sections to render, in order: permanent slots plus any one-off slot used that day. */
+  slotList: { id: number; name: string; permanent: boolean }[];
   slots: Record<Slot, EntryWithFood[]>;
   totals: DayTotals;
   slotTotals: Record<Slot, DayTotals>;
@@ -208,12 +213,14 @@ export function entriesForRange(start: string, end: string): DiaryEntry[] {
 }
 
 export function sumEntries(entries: DiaryEntry[]): DayTotals {
-  const t: DayTotals = { energyKcal: 0, proteinG: 0, carbsG: 0, fatG: 0, fibreG: 0, sodiumMg: 0 };
+  const t: DayTotals = { energyKcal: 0, proteinG: 0, carbsG: 0, fatG: 0, satFatG: 0, sugarsG: 0, fibreG: 0, sodiumMg: 0 };
   for (const e of entries) {
     t.energyKcal += e.energyKcal;
     t.proteinG += e.proteinG;
     t.carbsG += e.carbsG;
     t.fatG += e.fatG;
+    t.satFatG += e.satFatG ?? 0;
+    t.sugarsG += e.sugarsG ?? 0;
     t.fibreG += e.fibreG ?? 0;
     t.sodiumMg += e.sodiumMg ?? 0;
   }
@@ -224,15 +231,25 @@ export function sumEntries(entries: DiaryEntry[]): DayTotals {
 export function getDay(date?: string): DaySummary {
   const d = date ?? today();
   const entries = entriesForRange(d, d);
-  const slots = Object.fromEntries(SLOTS.map((s) => [s, [] as EntryWithFood[]])) as Record<Slot, EntryWithFood[]>;
-  for (const e of withFoodNames(entries)) slots[e.slot as Slot].push(e);
+  const defined = listSlots();
+  const used = new Set(entries.map((e) => e.slot));
+  const slotList = defined
+    .filter((s) => s.permanent === 1 || used.has(s.name))
+    .map((s) => ({ id: s.id, name: s.name, permanent: s.permanent === 1 }));
+  // Entries in a since-deleted section still need a home on their day.
+  for (const name of used)
+    if (!slotList.some((s) => s.name === name))
+      slotList.push({ id: -1, name, permanent: false });
+  const slots = Object.fromEntries(slotList.map((s) => [s.name, [] as EntryWithFood[]])) as Record<Slot, EntryWithFood[]>;
+  for (const e of withFoodNames(entries)) slots[e.slot]!.push(e);
   const totals = sumEntries(entries);
   const slotTotals = Object.fromEntries(
-    SLOTS.map((s) => [s, sumEntries(slots[s])]),
+    slotList.map((s) => [s.name, sumEntries(slots[s.name]!)]),
   ) as Record<Slot, DayTotals>;
   const g = getGoals(d);
   return {
     date: d,
+    slotList,
     slots,
     totals,
     slotTotals,

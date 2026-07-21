@@ -7,14 +7,15 @@ import * as mealsSvc from "../services/meals";
 import * as goalsSvc from "../services/goals";
 import * as weight from "../services/weight";
 import * as insights from "../services/insights";
-import { SLOTS } from "../../shared/nutrition";
+import * as slots from "../services/slots";
 
 export const api = new Hono();
 
 api.onError((err, c) => c.json({ error: err.message }, 400));
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
-const slot = z.enum(SLOTS);
+// Validated against the diary_slots table in services, not an enum.
+const slot = z.string().min(1);
 
 const servingSchema = z.object({ name: z.string().min(1), grams: z.number().positive() });
 
@@ -42,7 +43,7 @@ api.get("/foods/search", (c) => {
 api.get("/foods/recent", (c) => {
   const limit = Math.min(Number(c.req.query("limit") ?? 20), 50);
   const s = c.req.query("slot");
-  return c.json(foods.recentFoods(limit, s ? slot.parse(s) : undefined));
+  return c.json(foods.recentFoods(limit, s || undefined));
 });
 api.get("/foods/barcode/:code", (c) => {
   const food = foods.getFoodByBarcode(c.req.param("code"));
@@ -136,6 +137,26 @@ api.patch(
 );
 api.delete("/diary/entries/:id", (c) => {
   diary.deleteEntry(Number(c.req.param("id")));
+  return c.body(null, 204);
+});
+
+// --- diary sections (slots) ---
+api.get("/slots", (c) => c.json(slots.listSlots()));
+api.post(
+  "/slots",
+  zValidator("json", z.object({ name: z.string().min(1), permanent: z.boolean().optional() })),
+  (c) => {
+    const { name, permanent } = c.req.valid("json");
+    return c.json(slots.createSlot(name, permanent ?? true), 201);
+  },
+);
+api.patch(
+  "/slots/:id",
+  zValidator("json", z.object({ permanent: z.boolean().optional() })),
+  (c) => c.json(slots.updateSlot(Number(c.req.param("id")), c.req.valid("json"))),
+);
+api.delete("/slots/:id", (c) => {
+  slots.deleteSlot(Number(c.req.param("id")));
   return c.body(null, 204);
 });
 

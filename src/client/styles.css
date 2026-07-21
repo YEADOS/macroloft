@@ -103,6 +103,17 @@ body {
   .row-action:focus-visible { opacity: 1; }
 }
 
+/* Touch: no 300ms double-tap delay, no grey tap flash — active: states show feedback instead. */
+button, a, select, input, label {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS zooms any focused input under 16px — keep form text at 16px on touch layouts. */
+@media (max-width: 767px) {
+  input, select, textarea { font-size: 16px; }
+}
+
 input, select, textarea {
   background: var(--surface-raised);
   border: 1px solid var(--line);

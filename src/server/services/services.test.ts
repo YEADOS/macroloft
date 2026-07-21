@@ -116,19 +116,19 @@ describe("diary", () => {
   test("getDay groups by slot and computes remaining vs goals", () => {
     goalsSvc.setGoals({ energyKcal: 2000, proteinG: 150, effectiveDate: "2026-06-01" });
     const day = diary.getDay("2026-07-01");
-    expect(day.slots.breakfast.length).toBe(1);
-    expect(day.slots.lunch.length).toBe(1);
+    expect(day.slots.breakfast!.length).toBe(1);
+    expect(day.slots.lunch!.length).toBe(1);
     expect(day.remaining!.energyKcal).toBeCloseTo(2000 - day.totals.energyKcal, 1);
   });
 
   test("getDay carries per-slot totals and food names", () => {
     const day = diary.getDay("2026-07-01");
-    expect(day.slots.breakfast[0]!.foodName).toBe("Whey Scoop");
-    expect(day.slotTotals.breakfast.energyKcal).toBeCloseTo(
-      day.slots.breakfast[0]!.energyKcal,
+    expect(day.slots.breakfast![0]!.foodName).toBe("Whey Scoop");
+    expect(day.slotTotals.breakfast!.energyKcal).toBeCloseTo(
+      day.slots.breakfast![0]!.energyKcal,
       1,
     );
-    expect(day.slotTotals.snacks.energyKcal).toBe(0);
+    expect(day.slotTotals.snacks!.energyKcal).toBe(0);
   });
 
   test("recent foods return the last quantity used, newest first", () => {
@@ -140,6 +140,65 @@ describe("diary", () => {
     expect(recent[0]!.timesLogged).toBeGreaterThan(1);
     // slot-scoped recents only see that slot's history
     expect(foods.recentFoods(10, "snacks")[0]!.lastQuantityG).toBe(45);
+  });
+});
+
+describe("diary sections (slots)", () => {
+  const slots = require("./slots") as typeof import("./slots");
+
+  test("defaults are seeded in order", () => {
+    expect(slots.listSlots().map((s) => s.name)).toEqual([
+      "breakfast",
+      "lunch",
+      "dinner",
+      "snacks",
+    ]);
+  });
+
+  test("logging to an unknown section lists the valid ones", () => {
+    const whey = foods.searchFoods("whey scoop")[0]!;
+    expect(() =>
+      diary.logFood({ foodId: whey.id, quantityG: 30, slot: "elevenses", date: "2026-07-04" }),
+    ).toThrow(/breakfast, lunch, dinner, snacks/);
+  });
+
+  test("permanent custom section appears on every day; one-off only when used", () => {
+    slots.createSlot("drinks", true);
+    slots.createSlot("cheat", false);
+    const empty = diary.getDay("2026-07-10");
+    expect(empty.slotList.map((s) => s.name)).toContain("drinks");
+    expect(empty.slotList.map((s) => s.name)).not.toContain("cheat");
+    const whey = foods.searchFoods("whey scoop")[0]!;
+    diary.logFood({ foodId: whey.id, quantityG: 30, slot: "cheat", date: "2026-07-10" });
+    const used = diary.getDay("2026-07-10");
+    expect(used.slotList.map((s) => s.name)).toContain("cheat");
+    expect(used.slots.cheat!.length).toBe(1);
+  });
+
+  test("slot names are matched case-insensitively and canonicalised", () => {
+    const whey = foods.searchFoods("whey scoop")[0]!;
+    const e = diary.logFood({ foodId: whey.id, quantityG: 30, slot: "Drinks", date: "2026-07-10" });
+    expect(e.slot).toBe("drinks");
+  });
+
+  test("moving an entry to another section", () => {
+    const whey = foods.searchFoods("whey scoop")[0]!;
+    const e = diary.logFood({ foodId: whey.id, quantityG: 30, slot: "lunch", date: "2026-07-11" });
+    const moved = diary.updateEntry(e.id, { slot: "dinner" });
+    expect(moved.slot).toBe("dinner");
+    expect(moved.energyKcal).toBe(e.energyKcal);
+  });
+
+  test("deleting a section in use is refused; empty one deletes", () => {
+    const cheat = slots.listSlots().find((s) => s.name === "cheat")!;
+    expect(() => slots.deleteSlot(cheat.id)).toThrow(/entr/);
+    const spare = slots.createSlot("spare", true);
+    slots.deleteSlot(spare.id);
+    expect(slots.listSlots().map((s) => s.name)).not.toContain("spare");
+  });
+
+  test("duplicate section names are rejected", () => {
+    expect(() => slots.createSlot("Drinks")).toThrow(/already exists/);
   });
 });
 

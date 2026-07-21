@@ -16,10 +16,14 @@ function MacroBar({
   return (
     <div className="flex-1">
       <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-        <span className="plaque">{label}</span>
-        <span className="font-mono text-[11px]">
+        <span className="plaque" style={{ color }}>
+          {label}
+        </span>
+        <span className="font-mono text-sm font-semibold">
           {g(eaten)}
-          {target ? <span className="text-muted">/{g(target)}g</span> : "g"}
+          <span className="text-[11px] font-normal text-muted">
+            {target ? `/${g(target)}g` : "g"}
+          </span>
         </span>
       </div>
       <div className="mt-1.5 h-[3px] w-full" style={{ background: "var(--line)" }}>
@@ -34,7 +38,25 @@ function MacroBar({
   );
 }
 
-export default function DayGauge({ day }: { day: Day }) {
+function NutrientTile({ label, value, unit }: { label: string; value: number; unit: string }) {
+  return (
+    <div className="flex-1 border-t rule pt-1.5">
+      <div className="plaque">{label}</div>
+      <div className="font-mono text-sm font-semibold">
+        {label === "Sodium" ? Math.round(value).toLocaleString() : g(value)}
+        <span className="text-[11px] font-normal text-muted">{unit}</span>
+      </div>
+    </div>
+  );
+}
+
+export default function DayGauge({
+  day,
+  mode = "macros",
+}: {
+  day: Day;
+  mode?: "macros" | "nutrients";
+}) {
   const target = day.goals?.energyKcal ?? null;
   const eaten = day.totals.energyKcal;
   const remaining = target !== null ? target - eaten : null;
@@ -54,7 +76,9 @@ export default function DayGauge({ day }: { day: Day }) {
           </div>
         </div>
         <div className="pb-1 text-right font-mono text-xs text-muted">
-          <div>{kcal(eaten)} eaten</div>
+          <div>
+            <span className="text-sm font-semibold text-ink">{kcal(eaten)}</span> eaten
+          </div>
           {target !== null && <div>{kcal(target)} target</div>}
         </div>
       </div>
@@ -73,26 +97,35 @@ export default function DayGauge({ day }: { day: Day }) {
         />
       </div>
 
-      <div className="mt-5 flex gap-6">
-        <MacroBar
-          label="Protein"
-          eaten={day.totals.proteinG}
-          target={day.goals?.proteinG ?? null}
-          color="var(--chart-protein)"
-        />
-        <MacroBar
-          label="Carbs"
-          eaten={day.totals.carbsG}
-          target={day.goals?.carbsG ?? null}
-          color="var(--chart-carbs)"
-        />
-        <MacroBar
-          label="Fat"
-          eaten={day.totals.fatG}
-          target={day.goals?.fatG ?? null}
-          color="var(--chart-fat)"
-        />
-      </div>
+      {mode === "macros" ? (
+        <div className="mt-5 flex gap-6">
+          <MacroBar
+            label="Protein"
+            eaten={day.totals.proteinG}
+            target={day.goals?.proteinG ?? null}
+            color="var(--chart-protein)"
+          />
+          <MacroBar
+            label="Carbs"
+            eaten={day.totals.carbsG}
+            target={day.goals?.carbsG ?? null}
+            color="var(--chart-carbs)"
+          />
+          <MacroBar
+            label="Fat"
+            eaten={day.totals.fatG}
+            target={day.goals?.fatG ?? null}
+            color="var(--chart-fat)"
+          />
+        </div>
+      ) : (
+        <div className="mt-5 flex gap-4">
+          <NutrientTile label="Fibre" value={day.totals.fibreG} unit="g" />
+          <NutrientTile label="Sugars" value={day.totals.sugarsG} unit="g" />
+          <NutrientTile label="Sat fat" value={day.totals.satFatG} unit="g" />
+          <NutrientTile label="Sodium" value={day.totals.sodiumMg} unit="mg" />
+        </div>
+      )}
     </section>
   );
 }

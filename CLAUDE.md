@@ -7,7 +7,7 @@ server, accessed over Tailscale. Australian food data (AFCD + Open Food Facts).
 ## Status
 
 Implemented and working: schema + migrations, AFCD + OFF imports, full REST API,
-MCP server (19 tools at `/mcp`), React frontend (diary, foods/meals, insights,
+MCP server (21 tools at `/mcp`), React frontend (diary, foods/meals, insights,
 weight, targets), tests (`bun test`), Docker. `docs/PLAN.md` holds the locked
 decisions; the other docs are the spec:
 

@@ -36,5 +36,6 @@ export interface MacroTotals {
   sodiumMg: number | null;
 }
 
-export const SLOTS = ["breakfast", "lunch", "dinner", "snacks"] as const;
-export type Slot = (typeof SLOTS)[number];
+/** Seeded on first run; the live list is the diary_slots table (custom sections allowed). */
+export const DEFAULT_SLOTS = ["breakfast", "lunch", "dinner", "snacks"] as const;
+export type Slot = string;

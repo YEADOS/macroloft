@@ -27,7 +27,13 @@ to use each tool, and search results include ids ready to pass to `log_food`.
 | `log_meal` | meal_id, scale=1, slot, date? | Expands the saved meal into entries sharing a `meal_log_id`. |
 | `update_entry` | entry_id, fields | Change quantity/slot/date; nutrients re-snapshot on quantity change. |
 | `delete_entry` | entry_id | |
-| `get_day` | date? | All entries grouped by slot (each with its resolved `foodName`/`brand`) + per-slot totals + day totals + active targets + remaining. |
+| `get_day` | date? | All entries grouped by slot (each with its resolved `foodName`/`brand`) + `slotList` (ordered sections) + per-slot totals + day totals + active targets + remaining. |
+| `list_slots` | — | The diary's sections in display order, with the `permanent` flag. |
+| `create_slot` | name, permanent=true | New diary section; permanent shows every day, one-off only on days it's used. |
+
+`slot` everywhere is a section name matched case-insensitively against the
+`diary_slots` table (defaults: breakfast, lunch, dinner, snacks). Unknown names
+are rejected with the valid list in the error message.
 
 ## Meals
 

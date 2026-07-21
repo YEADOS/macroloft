@@ -6,13 +6,17 @@ import * as mealsSvc from "../services/meals";
 import * as goalsSvc from "../services/goals";
 import * as weight from "../services/weight";
 import * as insights from "../services/insights";
-import { SLOTS } from "../../shared/nutrition";
+import * as slotsSvc from "../services/slots";
 
 const dateStr = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .describe("Local calendar date YYYY-MM-DD; omit for today");
-const slot = z.enum(SLOTS).describe("Meal slot");
+const slot = z
+  .string()
+  .describe(
+    "Diary section name (case-insensitive). Defaults: breakfast, lunch, dinner, snacks — the user may have custom sections; list_slots shows the current set. Unknown names are rejected with the valid list.",
+  );
 
 function json(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
@@ -179,6 +183,26 @@ export function buildMcpServer(): McpServer {
       inputSchema: { date: dateStr.optional() },
     },
     ({ date }) => json(diary.getDay(date)),
+  );
+
+  server.registerTool(
+    "list_slots",
+    {
+      description:
+        "List the diary's sections (slots) in display order. Permanent sections appear every day; one-off sections only on days where they have entries.",
+      inputSchema: {},
+    },
+    () => json(slotsSvc.listSlots()),
+  );
+
+  server.registerTool(
+    "create_slot",
+    {
+      description:
+        "Create a new diary section (e.g. 'drinks', 'pre-workout'). permanent=true (default) shows it every day; false makes it a one-off that only appears on days it's used.",
+      inputSchema: { name: z.string(), permanent: z.boolean().optional() },
+    },
+    ({ name, permanent }) => json(slotsSvc.createSlot(name, permanent ?? true)),
   );
 
   server.registerTool(

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { Slot } from "@shared/nutrition";
 import {
   apiBarcode,
   apiCreateFood,
@@ -61,11 +60,13 @@ function FoodRow({
 function QuantityPicker({
   food,
   onLog,
+  onBack,
   busy,
   initialGrams,
 }: {
   food: Food;
   onLog: (opts: { quantityG?: number; serving?: { name: string; count: number } }) => void;
+  onBack: () => void;
   busy: boolean;
   /** Portion to pre-fill (from recents); falls back to the food's own serving. */
   initialGrams?: number;
@@ -83,6 +84,12 @@ function QuantityPicker({
 
   return (
     <div className="mt-4 border rule bg-surface p-4">
+      <button
+        onClick={onBack}
+        className="-ml-1 mb-2 px-1 py-1 font-mono text-xs text-muted active:text-ink md:hover:text-ink"
+      >
+        ‹ Back to results
+      </button>
       <div className="text-sm font-medium">{food.name}</div>
       {food.brand && <div className="font-mono text-[11px] text-muted">{food.brand}</div>}
       <div className="mt-3 flex flex-wrap items-end gap-3">
@@ -181,16 +188,19 @@ function QuantityPicker({
 }
 
 export default function AddSheet({
-  slot,
+  slot: initialSlot,
+  slots,
   date,
   onDone,
   onClose,
 }: {
-  slot: Slot;
+  slot: string;
+  slots: string[];
   date: string;
   onDone: () => void;
   onClose: () => void;
 }) {
+  const [slot, setSlot] = useState(initialSlot);
   const [tab, setTab] = useState<Tab>("search");
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Food | null>(null);
@@ -231,16 +241,29 @@ export default function AddSheet({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-bg">
-      <div className="mx-auto max-w-2xl px-4 py-5">
-        <div className="flex items-center justify-between">
+      <div className="mx-auto max-w-2xl px-4 py-5 pb-16">
+        <div
+          className="sticky top-0 z-10 -mx-4 flex items-center justify-between px-4 py-2"
+          style={{ background: "color-mix(in oklab, var(--bg) 94%, transparent)", backdropFilter: "blur(8px)" }}
+        >
           <div>
             <div className="plaque">Add to</div>
-            <div className="font-display text-2xl font-black uppercase">{slot}</div>
+            <select
+              value={slot}
+              onChange={(e) => setSlot(e.target.value)}
+              className="!border-0 !bg-transparent !p-0 font-display text-2xl font-black uppercase"
+            >
+              {(slots.length > 0 ? slots : [slot]).map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </div>
-          <button onClick={onClose} className="plaque hover:text-ink">✕ Close</button>
+          <button onClick={onClose} className="plaque -mr-2 px-2 py-3 hover:text-ink">✕ Close</button>
         </div>
 
-        <div className="mt-4 flex gap-1 border-b rule">
+        <div className="mt-2 flex gap-1 overflow-x-auto border-b rule">
           {(
             [
               ["search", "Search"],
@@ -252,7 +275,7 @@ export default function AddSheet({
             <button
               key={t}
               onClick={() => { setTab(t); setPicked(null); setPrefillG(null); setError(null); }}
-              className={`plaque border-b-2 px-3 py-2 ${
+              className={`plaque whitespace-nowrap border-b-2 px-3 py-2.5 ${
                 tab === t ? "border-[var(--accent)] !text-ink" : "border-transparent"
               }`}
             >
@@ -291,6 +314,7 @@ export default function AddSheet({
                 food={picked}
                 busy={busy}
                 initialGrams={prefillG ?? undefined}
+                onBack={() => { setPicked(null); setPrefillG(null); }}
                 onLog={(opts) => run(() => apiLogFood({ foodId: picked.id, ...opts, slot, date }))}
               />
             ) : q.trim().length >= 2 ? (

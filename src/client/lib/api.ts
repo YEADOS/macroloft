@@ -52,6 +52,10 @@ export interface Entry {
   proteinG: number;
   carbsG: number;
   fatG: number;
+  satFatG: number | null;
+  sugarsG: number | null;
+  fibreG: number | null;
+  sodiumMg: number | null;
 }
 export interface RecentFood {
   food: Food;
@@ -73,11 +77,19 @@ export interface Totals {
   proteinG: number;
   carbsG: number;
   fatG: number;
+  satFatG: number;
+  sugarsG: number;
   fibreG: number;
   sodiumMg: number;
 }
+export interface DiarySlot {
+  id: number;
+  name: string;
+  permanent: boolean;
+}
 export interface Day {
   date: string;
+  slotList: DiarySlot[];
   slots: Record<Slot, Entry[]>;
   totals: Totals;
   slotTotals: Record<Slot, Totals>;
@@ -209,3 +221,9 @@ export const apiSetGoals = (input: object) =>
 
 export const apiLogWeight = (input: { weightKg: number; date?: string; note?: string }) =>
   http<unknown>("/weight", { method: "PUT", body: JSON.stringify(input) });
+
+export const apiCreateSlot = (input: { name: string; permanent?: boolean }) =>
+  http<DiarySlot>("/slots", { method: "POST", body: JSON.stringify(input) });
+
+export const apiDeleteSlot = (id: number) =>
+  http<void>(`/slots/${id}`, { method: "DELETE" });

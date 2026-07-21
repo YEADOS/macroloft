@@ -77,7 +77,7 @@ One row per logged item.
 |---|---|---|
 | id | integer pk | |
 | date | text `YYYY-MM-DD` | indexed |
-| slot | text | `'breakfast' \| 'lunch' \| 'dinner' \| 'snacks'` |
+| slot | text | a `diary_slots.name` (validated in services, not a DB constraint) |
 | kind | text | `'food' \| 'quick'` |
 | food_id | fk, nullable | null for quick entries |
 | meal_log_id | text, nullable | groups entries logged together from a saved meal |
@@ -91,6 +91,23 @@ One row per logged item.
 Snapshotting means food-DB refreshes and custom-food edits never silently rewrite
 past days. Quick entries: kcal = 4·protein + 4·carbs + 9·fat (Atwater), computed
 server-side; caller may override kcal explicitly (e.g. alcohol).
+
+## diary_slots
+
+The diary's sections. Seeded with breakfast/lunch/dinner/snacks (positions 0–3)
+on first use; users can add custom sections ("drinks").
+
+| column | type | notes |
+|---|---|---|
+| id | integer pk | |
+| name | text | unique, case-insensitively matched on log |
+| position | integer | display order |
+| permanent | integer 0/1 | permanent slots render every day; one-off slots only on days with entries |
+| created_at | integer | epoch ms |
+
+Deleting a slot is refused while any diary entry references it. `getDay` also
+surfaces orphan slot names found in that day's entries (a since-deleted section
+never hides history).
 
 ## goals
 

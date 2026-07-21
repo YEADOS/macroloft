@@ -80,9 +80,7 @@ export const diaryEntries = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     date: text("date").notNull(), // YYYY-MM-DD local
-    slot: text("slot", {
-      enum: ["breakfast", "lunch", "dinner", "snacks"],
-    }).notNull(),
+    slot: text("slot").notNull(), // references diary_slots.name (validated in services)
     kind: text("kind", { enum: ["food", "quick"] }).notNull(),
     foodId: integer("food_id").references(() => foods.id),
     mealLogId: text("meal_log_id"),
@@ -100,6 +98,19 @@ export const diaryEntries = sqliteTable(
     loggedAt: integer("logged_at").notNull(),
   },
   (t) => [index("diary_entries_date").on(t.date)],
+);
+
+export const diarySlots = sqliteTable(
+  "diary_slots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    position: integer("position").notNull(),
+    // Permanent slots show every day; one-off slots only on days with entries.
+    permanent: integer("permanent").notNull().default(1),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("diary_slots_name").on(t.name)],
 );
 
 export const goals = sqliteTable(
@@ -140,5 +151,6 @@ export type FoodServing = typeof foodServings.$inferSelect;
 export type Meal = typeof meals.$inferSelect;
 export type MealItem = typeof mealItems.$inferSelect;
 export type DiaryEntry = typeof diaryEntries.$inferSelect;
+export type DiarySlot = typeof diarySlots.$inferSelect;
 export type Goal = typeof goals.$inferSelect;
 export type WeighIn = typeof weighIns.$inferSelect;
