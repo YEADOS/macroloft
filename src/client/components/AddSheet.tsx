@@ -1,21 +1,26 @@
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   apiAddServing,
   apiBarcode,
   apiCreateFood,
+  apiEstimatePhoto,
   apiLogFood,
   apiLogMeal,
   apiLogQuick,
+  useAiConfig,
   useFoodSearch,
   useMeals,
   useRecentFoods,
   type Food,
+  type FoodEstimate,
 } from "../lib/api";
+import { downscaleImage } from "../lib/image";
 import { kcal, g } from "../lib/format";
 import BarcodeScanner from "./BarcodeScanner";
 
-type Tab = "search" | "quick" | "meals" | "new";
+type Tab = "search" | "quick" | "photo" | "meals" | "new";
 
 const sourceTag = { afcd: "AFCD", off: "OFF", custom: "MINE" } as const;
 
@@ -301,9 +306,15 @@ export default function AddSheet({
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Photo estimation → prefilled New Food form. aiNote drives the "AI estimate"
+  // banner on the New Food tab (null = no banner).
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [aiNote, setAiNote] = useState<string | null>(null);
   const search = useFoodSearch(q);
   const recent = useRecentFoods();
   const meals = useMeals();
+  const aiConfig = useAiConfig();
+  const navigate = useNavigate();
 
   const pick = (f: Food, portionG?: number) => {
     setPrefillG(portionG ?? null);
@@ -325,6 +336,10 @@ export default function AddSheet({
     carbs: "",
     fat: "",
     kcal: "",
+    satfat: "",
+    sugars: "",
+    fibre: "",
+    sodium: "",
     basis: "100g" as "100g" | "serving",
     servingG: "",
     itemsPer: "",
@@ -342,6 +357,46 @@ export default function AddSheet({
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Map a photo estimate onto the New Food form. The model returns per-100g
+  // macros plus the plate's weight; we prefill in "serving" basis so the form
+  // shows the photographed portion and its totals, and "Create & log 1 serving"
+  // logs exactly that — no new save path, the form is the override UI.
+  const applyEstimate = (est: FoodEstimate) => {
+    const grams = est.food.servings?.[0]?.grams ?? 100;
+    const perServing = (v?: number) =>
+      v == null ? "" : String(Math.round(((v * grams) / 100) * 10) / 10);
+    setNf({
+      name: est.food.name ?? "",
+      brand: est.food.brand ?? "",
+      protein: perServing(est.food.proteinG),
+      carbs: perServing(est.food.carbsG),
+      fat: perServing(est.food.fatG),
+      kcal: est.food.energyKcal != null ? perServing(est.food.energyKcal) : "",
+      satfat: perServing(est.food.satFatG),
+      sugars: perServing(est.food.sugarsG),
+      fibre: perServing(est.food.fibreG),
+      sodium: perServing(est.food.sodiumMg),
+      basis: "serving",
+      servingG: String(grams),
+      itemsPer: "",
+    });
+    setAiNote(est.note ?? "");
+    setTab("new");
+  };
+
+  const estimateFromFile = async (file: File) => {
+    setPhotoBusy(true);
+    setError(null);
+    try {
+      const { base64, mimeType } = await downscaleImage(file);
+      applyEstimate(await apiEstimatePhoto(base64, mimeType));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPhotoBusy(false);
     }
   };
 
@@ -374,13 +429,14 @@ export default function AddSheet({
             [
               ["search", "Search"],
               ["quick", "Quick macros"],
+              ["photo", "Photo"],
               ["meals", "My meals"],
               ["new", "New food"],
             ] as [Tab, string][]
           ).map(([t, label]) => (
             <button
               key={t}
-              onClick={() => { setTab(t); setPicked(null); setPrefillG(null); setError(null); }}
+              onClick={() => { setTab(t); setPicked(null); setPrefillG(null); setError(null); setAiNote(null); }}
               className={`plaque whitespace-nowrap border-b-2 px-3 py-2.5 ${
                 tab === t ? "border-[var(--accent)] !text-ink" : "border-transparent"
               }`}
@@ -506,6 +562,62 @@ export default function AddSheet({
           </div>
         )}
 
+        {tab === "photo" && (
+          <div className="mt-4">
+            {aiConfig.data && !aiConfig.data.enabled ? (
+              <div className="border rule p-5 text-center">
+                <div className="plaque mb-2">Photo estimation is off</div>
+                <p className="font-mono text-xs text-muted">
+                  Turn on AI photo estimation and set a provider to snap a meal and
+                  auto-fill its macros.
+                </p>
+                <button
+                  onClick={() => { onClose(); navigate("/settings"); }}
+                  className="mt-4 border rule px-4 py-2 font-mono text-xs text-muted active:bg-raised md:hover:text-ink"
+                >
+                  Open Settings ›
+                </button>
+              </div>
+            ) : (
+              <>
+                <label
+                  className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed rule py-12 text-center ${
+                    photoBusy ? "opacity-60" : "cursor-pointer active:bg-raised md:hover:bg-raised"
+                  }`}
+                >
+                  <span className="font-mono text-4xl" style={{ color: "var(--accent)" }}>
+                    ☐
+                  </span>
+                  <div>
+                    <div className="text-sm">{photoBusy ? "Estimating…" : "Snap a meal"}</div>
+                    <div className="font-mono text-[11px] text-muted">
+                      {photoBusy
+                        ? "The model is reading your photo — this can take a few seconds."
+                        : "Take a photo or pick one — you'll confirm the macros before saving."}
+                    </div>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    disabled={photoBusy}
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (file) estimateFromFile(file);
+                    }}
+                  />
+                </label>
+                <p className="mt-3 font-mono text-[11px] text-muted">
+                  Best for whole plates and packaged foods. It's an estimate — always
+                  check the numbers on the next screen.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
         {tab === "meals" && (
           <div className="mt-2">
             {meals.data?.length === 0 && (
@@ -534,6 +646,18 @@ export default function AddSheet({
 
         {tab === "new" && (
           <div className="mt-4 space-y-3">
+            {aiNote !== null && (
+              <div
+                className="border rule p-3"
+                style={{ borderColor: "var(--accent)", background: "color-mix(in oklab, var(--accent) 8%, transparent)" }}
+              >
+                <div className="plaque" style={{ color: "var(--accent)" }}>
+                  AI estimate
+                </div>
+                <div className="text-sm">Check and edit the numbers before saving.</div>
+                {aiNote && <div className="mt-1 font-mono text-[11px] text-muted">{aiNote}</div>}
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <span className="plaque">Nutrients are</span>
               <div className="inline-flex border rule font-mono text-[11px]">
@@ -596,6 +720,10 @@ export default function AddSheet({
                   ["Protein g", "protein"],
                   ["Carbs g", "carbs"],
                   ["Fat g", "fat"],
+                  ["Sat fat g", "satfat"],
+                  ["Sugars g", "sugars"],
+                  ["Fibre g", "fibre"],
+                  ["Sodium mg", "sodium"],
                 ] as const
               ).map(([label, key]) => (
                 <label key={key} className="flex flex-col gap-1">
@@ -623,6 +751,10 @@ export default function AddSheet({
                         ...(items >= 2 ? [{ name: "1 piece", grams: r1(servingG / items) }] : []),
                       ]
                     : undefined;
+                  // Optional micros: send only when filled, scaled per 100 g
+                  // by the same factor as the macros (sodium is mg, same scaling).
+                  const micro = (v: string) =>
+                    v ? r1(Number(v) * factor) : undefined;
                   const food = await apiCreateFood({
                     name: nf.name,
                     brand: nf.brand || undefined,
@@ -630,6 +762,10 @@ export default function AddSheet({
                     proteinG: r1((Number(nf.protein) || 0) * factor),
                     carbsG: r1((Number(nf.carbs) || 0) * factor),
                     fatG: r1((Number(nf.fat) || 0) * factor),
+                    satFatG: micro(nf.satfat),
+                    sugarsG: micro(nf.sugars),
+                    fibreG: micro(nf.fibre),
+                    sodiumMg: micro(nf.sodium),
                     servings,
                   });
                   await apiLogFood({

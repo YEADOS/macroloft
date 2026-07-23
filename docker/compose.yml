@@ -10,6 +10,13 @@ services:
       # (http://192.168.0.20:3000) alongside the tailnet HTTPS path. No auth by
       # design, so the LAN is trusted here as well as the tailnet.
       - "3000:3000"
+    # AI photo estimation reads its provider config from the settings table
+    # (editable in the Settings page). The API key can instead come from the
+    # environment (docker/.env, gitignored) to keep it out of the plaintext
+    # sqlite db. Empty by default — a blank value is harmless, so both the
+    # Settings-page and env-var key paths stay open.
+    environment:
+      AI_API_KEY: ${AI_API_KEY:-}
     volumes:
       # repo data dir: sqlite db + downloaded source datasets. Imports run on
       # the host write straight into the DB the container serves.

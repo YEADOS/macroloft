@@ -2,12 +2,15 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import * as foods from "../services/foods";
+import { foodInputSchema, servingInputSchema } from "../services/foods";
 import * as diary from "../services/diary";
 import * as mealsSvc from "../services/meals";
 import * as goalsSvc from "../services/goals";
 import * as weight from "../services/weight";
 import * as insights from "../services/insights";
 import * as slots from "../services/slots";
+import * as vision from "../services/vision";
+import { maskedAiConfig, setAiConfig } from "../services/ai/config";
 
 export const api = new Hono();
 
@@ -17,22 +20,10 @@ const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 // Validated against the diary_slots table in services, not an enum.
 const slot = z.string().min(1);
 
-const servingSchema = z.object({ name: z.string().min(1), grams: z.number().positive() });
-
-const foodBody = z.object({
-  name: z.string().min(1),
-  brand: z.string().optional(),
-  barcode: z.string().optional(),
-  energyKcal: z.number().nonnegative().optional(),
-  proteinG: z.number().nonnegative(),
-  carbsG: z.number().nonnegative(),
-  fatG: z.number().nonnegative(),
-  satFatG: z.number().nonnegative().optional(),
-  sugarsG: z.number().nonnegative().optional(),
-  fibreG: z.number().nonnegative().optional(),
-  sodiumMg: z.number().nonnegative().optional(),
-  servings: z.array(servingSchema).optional(),
-});
+// The food shape lives in the foods service so REST, MCP, and AI vision all
+// validate through one schema.
+const servingSchema = servingInputSchema;
+const foodBody = foodInputSchema;
 
 // --- foods ---
 api.get("/foods/search", (c) => {
@@ -229,6 +220,44 @@ api.put(
     return c.json(weight.logWeight(weightKg, date, note));
   },
 );
+
+// --- ai (photo estimation + provider config) ---
+api.post(
+  "/ai/estimate",
+  zValidator(
+    "json",
+    z.object({
+      imageBase64: z.string().min(1),
+      mimeType: z
+        .string()
+        .regex(/^image\/(jpeg|png|webp|gif)$/, "expected image/jpeg, image/png, image/webp or image/gif"),
+    }),
+  ),
+  async (c) => {
+    const { imageBase64, mimeType } = c.req.valid("json");
+    return c.json(await vision.estimateFoodFromPhoto(imageBase64, mimeType));
+  },
+);
+api.get("/ai/config", (c) => c.json(maskedAiConfig()));
+api.put(
+  "/ai/config",
+  zValidator(
+    "json",
+    z.object({
+      enabled: z.boolean().optional(),
+      provider: z.enum(["openai-compatible", "anthropic"]).optional(),
+      baseUrl: z.string().optional(),
+      model: z.string().optional(),
+      apiKey: z.string().optional(),
+      timeoutMs: z.number().int().positive().optional(),
+    }),
+  ),
+  (c) => {
+    setAiConfig(c.req.valid("json"));
+    return c.json(maskedAiConfig());
+  },
+);
+api.post("/ai/test", async (c) => c.json(await vision.testConnection()));
 
 // --- insights ---
 api.get("/summary", (c) => {

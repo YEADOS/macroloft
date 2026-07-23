@@ -4,6 +4,7 @@ import Foods from "./pages/Foods";
 import Insights from "./pages/Insights";
 import Weight from "./pages/Weight";
 import Goals from "./pages/Goals";
+import Settings from "./pages/Settings";
 
 const tabs = [
   { to: "/", label: "Diary", num: "01" },
@@ -51,6 +52,9 @@ export default function App() {
           <NavLink to="/goals" className="plaque hover:text-ink">
             ⚙ Targets
           </NavLink>
+          <NavLink to="/settings" className="plaque hover:text-ink">
+            ⚙ Settings
+          </NavLink>
           <button onClick={toggleTheme} className="plaque text-left hover:text-ink">
             ◐ Light / Dark
           </button>
@@ -64,6 +68,7 @@ export default function App() {
           <Route path="/insights" element={<Insights />} />
           <Route path="/weight" element={<Weight />} />
           <Route path="/goals" element={<Goals />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
 
@@ -100,6 +105,15 @@ export default function App() {
           >
             <span className="font-mono text-[10px]">05</span>
             <span className="plaque !text-inherit">Targets</span>
+          </NavLink>
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `flex flex-1 flex-col items-center gap-0.5 py-3 ${isActive ? "text-amber" : "text-muted"}`
+            }
+          >
+            <span className="font-mono text-[10px]">06</span>
+            <span className="plaque !text-inherit">Config</span>
           </NavLink>
         </div>
       </nav>

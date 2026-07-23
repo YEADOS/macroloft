@@ -124,6 +124,41 @@ export interface Summary {
   weight: WeightHistory;
 }
 
+export interface AiConfig {
+  enabled: boolean;
+  provider: "openai-compatible" | "anthropic";
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+  hasKey: boolean;
+  keyFromEnv: boolean;
+}
+/** Draft food from a photo — mirrors the server's per-100g CreateFoodInput. */
+export interface FoodEstimate {
+  food: {
+    name: string;
+    brand?: string;
+    energyKcal?: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+    satFatG?: number;
+    sugarsG?: number;
+    fibreG?: number;
+    sodiumMg?: number;
+    servings?: { name: string; grams: number }[];
+  };
+  note?: string;
+}
+export interface AiTestResult {
+  ok: boolean;
+  provider: string;
+  model: string;
+  latencyMs: number;
+  reply?: string;
+  error?: string;
+}
+
 // ── hooks ───────────────────────────────────────────────────────────────
 export const useDay = (date: string) =>
   useQuery({ queryKey: ["day", date], queryFn: () => http<Day>(`/diary/${date}`) });
@@ -224,6 +259,27 @@ export const apiSetGoals = (input: object) =>
 
 export const apiLogWeight = (input: { weightKg: number; date?: string; note?: string }) =>
   http<unknown>("/weight", { method: "PUT", body: JSON.stringify(input) });
+
+// ── ai ────────────────────────────────────────────────────────────────────
+export const useAiConfig = () =>
+  useQuery({ queryKey: ["aiConfig"], queryFn: () => http<AiConfig>("/ai/config") });
+
+export const apiSetAiConfig = (patch: {
+  enabled?: boolean;
+  provider?: "openai-compatible" | "anthropic";
+  baseUrl?: string;
+  model?: string;
+  apiKey?: string;
+  timeoutMs?: number;
+}) => http<AiConfig>("/ai/config", { method: "PUT", body: JSON.stringify(patch) });
+
+export const apiEstimatePhoto = (imageBase64: string, mimeType: string) =>
+  http<FoodEstimate>("/ai/estimate", {
+    method: "POST",
+    body: JSON.stringify({ imageBase64, mimeType }),
+  });
+
+export const apiTestAi = () => http<AiTestResult>("/ai/test", { method: "POST" });
 
 export const apiCreateSlot = (input: { name: string; permanent?: boolean }) =>
   http<DiarySlot>("/slots", { method: "POST", body: JSON.stringify(input) });

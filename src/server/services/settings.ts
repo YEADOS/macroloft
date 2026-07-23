@@ -7,6 +7,14 @@ const DEFAULTS: Record<string, string> = {
   energy_unit: "kcal",
   weight_unit: "kg",
   week_starts: "monday",
+  // AI photo estimation — off until a provider is configured in Settings.
+  // ai_api_key falls back to process.env.AI_API_KEY (see services/ai/config.ts).
+  ai_enabled: "false",
+  ai_provider: "openai-compatible",
+  ai_base_url: "",
+  ai_model: "",
+  ai_api_key: "",
+  ai_timeout_ms: "60000",
 };
 
 export function getSetting(key: string): string {

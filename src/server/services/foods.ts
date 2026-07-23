@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import { db, sqlite } from "../db/client";
 import { foods, foodServings, type Food, type FoodServing } from "../db/schema";
 import { kcalFromMacros, round1 } from "../../shared/nutrition";
@@ -146,20 +147,31 @@ export function getFoodByBarcode(barcode: string): FoodWithServings | null {
   return food ? getFood(food.id) : null;
 }
 
-export interface CreateFoodInput {
-  name: string;
-  brand?: string;
-  barcode?: string;
-  energyKcal?: number; // computed from macros when omitted
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-  satFatG?: number;
-  sugarsG?: number;
-  fibreG?: number;
-  sodiumMg?: number;
-  servings?: { name: string; grams: number }[];
-}
+// The one true shape of a custom food, as Zod. REST (`POST /foods`), the MCP
+// `create_food` tool, and the AI vision service all validate through this, so a
+// model-produced draft can only reach the DB via the exact path
+// createCustomFood already trusts. CreateFoodInput is derived from it.
+export const servingInputSchema = z.object({
+  name: z.string().min(1),
+  grams: z.number().positive(),
+});
+
+export const foodInputSchema = z.object({
+  name: z.string().min(1),
+  brand: z.string().optional(),
+  barcode: z.string().optional(),
+  energyKcal: z.number().nonnegative().optional(), // computed from macros when omitted
+  proteinG: z.number().nonnegative(),
+  carbsG: z.number().nonnegative(),
+  fatG: z.number().nonnegative(),
+  satFatG: z.number().nonnegative().optional(),
+  sugarsG: z.number().nonnegative().optional(),
+  fibreG: z.number().nonnegative().optional(),
+  sodiumMg: z.number().nonnegative().optional(),
+  servings: z.array(servingInputSchema).optional(),
+});
+
+export type CreateFoodInput = z.infer<typeof foodInputSchema>;
 
 export function createCustomFood(input: CreateFoodInput): FoodWithServings {
   const now = Date.now();

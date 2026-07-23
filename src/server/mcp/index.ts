@@ -7,6 +7,7 @@ import * as goalsSvc from "../services/goals";
 import * as weight from "../services/weight";
 import * as insights from "../services/insights";
 import * as slotsSvc from "../services/slots";
+import * as vision from "../services/vision";
 
 const dateStr = z
   .string()
@@ -304,6 +305,20 @@ export function buildMcpServer(): McpServer {
       inputSchema: { start: dateStr, end: dateStr },
     },
     ({ start, end }) => json(weight.getWeightHistory(start, end)),
+  );
+
+  server.registerTool(
+    "estimate_food_from_photo",
+    {
+      description:
+        "Estimate a food's name and per-100g macros from a photo. Returns an UNSAVED draft { food, note }: the `food` object is ready to pass to create_food (then log_food) once the user confirms it — nothing is saved until you do. Nutrients are per 100 g; food.servings[0].grams is the estimated weight of the portion shown. Requires AI estimation to be enabled in Settings. image_base64 is the base64 of a JPEG/PNG/WebP (a data: URL prefix is fine).",
+      inputSchema: {
+        image_base64: z.string(),
+        mime_type: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
+      },
+    },
+    async ({ image_base64, mime_type }) =>
+      json(await vision.estimateFoodFromPhoto(image_base64, mime_type ?? "image/jpeg")),
   );
 
   server.registerTool(

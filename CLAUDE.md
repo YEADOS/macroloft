@@ -7,14 +7,15 @@ server, accessed over Tailscale. Australian food data (AFCD + Open Food Facts).
 ## Status
 
 Implemented and working: schema + migrations, AFCD + OFF imports, full REST API,
-MCP server (22 tools at `/mcp`), React frontend (diary, foods/meals, insights,
-weight, targets), tests (`bun test`), Docker. `docs/PLAN.md` holds the locked
-decisions; the other docs are the spec:
+MCP server (23 tools at `/mcp`), React frontend (diary, foods/meals, insights,
+weight, targets, settings), AI photo macro estimation, tests (`bun test`),
+Docker. `docs/PLAN.md` holds the locked decisions; the other docs are the spec:
 
 - `docs/ARCHITECTURE.md` — stack, container shape, Tailscale/HTTPS, MCP transport, repo layout
 - `docs/DATA-MODEL.md` — SQLite schema (Drizzle)
 - `docs/FOOD-DATA.md` — AFCD + OFF import pipeline and search ranking
 - `docs/MCP-TOOLS.md` — the MCP tool surface
+- `docs/AI-PHOTO.md` — pluggable-LLM photo→macros feature (provider adapters, config, prompt)
 - `docs/UI-THEME.md` — the industrial-loft design system (tokens, type, layout)
 
 ## Stack (locked)
@@ -52,6 +53,14 @@ Barcode scanning needs HTTPS — served at `https://<host>.<tailnet>.ts.net` via
 `tailscale serve --bg http://localhost:3000` (already configured on the server;
 it's tailscaled state, not repo config, so rebuilds don't touch it). The pre-1.98
 form with an explicit `https /` mount point now hard-errors.
+
+AI photo estimation lives in `src/server/services/vision.ts` +
+`src/server/services/ai/` (pluggable `openai-compatible`/`anthropic` adapters,
+plain `fetch`, no SDK). Config is in the `settings` table (`ai_*` keys) and
+editable via the Settings page / `GET|PUT /api/ai/config`; the API key also
+falls back to the `AI_API_KEY` env var and is never returned in GETs. It's off
+by default (`ai_enabled=false`). Endpoints: `/api/ai/estimate`, `/api/ai/config`,
+`/api/ai/test`; MCP mirror: `estimate_food_from_photo`. See `docs/AI-PHOTO.md`.
 
 ## Rules
 
