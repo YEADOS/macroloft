@@ -5,6 +5,7 @@ import Insights from "./pages/Insights";
 import Weight from "./pages/Weight";
 import Goals from "./pages/Goals";
 import Settings from "./pages/Settings";
+import Convert from "./pages/Convert";
 
 const tabs = [
   { to: "/", label: "Diary", num: "01" },
@@ -49,6 +50,9 @@ export default function App() {
           </NavLink>
         ))}
         <div className="mt-auto flex flex-col gap-3 px-1">
+          <NavLink to="/convert" className="plaque hover:text-ink">
+            ⇄ Convert
+          </NavLink>
           <NavLink to="/goals" className="plaque hover:text-ink">
             ⚙ Targets
           </NavLink>
@@ -69,6 +73,7 @@ export default function App() {
           <Route path="/weight" element={<Weight />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/convert" element={<Convert />} />
         </Routes>
       </main>
 

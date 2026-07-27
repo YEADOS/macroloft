@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { NavLink } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiSetAiConfig, apiTestAi, useAiConfig, type AiTestResult } from "../lib/api";
 
@@ -87,6 +88,20 @@ export default function Settings() {
         <div className="plaque">Settings</div>
         <h1 className="font-display text-3xl font-black tracking-tight">The Control Room</h1>
       </header>
+
+      {/* The converter has no mobile tab of its own — this is how it's reached. */}
+      <NavLink
+        to="/convert"
+        className="mb-6 flex items-center justify-between gap-4 border-b rule pb-5 active:bg-raised md:hover:text-amber"
+      >
+        <div>
+          <h2 className="plaque mb-1">Unit converter</h2>
+          <p className="font-mono text-[11px] text-muted">
+            kJ ↔ kcal · lb ↔ kg · in ↔ mm
+          </p>
+        </div>
+        <span className="font-mono text-sm text-timber">⇄</span>
+      </NavLink>
 
       <section className="space-y-5">
         <div className="flex items-start justify-between gap-4 border-b rule pb-5">

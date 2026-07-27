@@ -69,6 +69,12 @@ whose rows are still individually editable. Note "new food" (add sheet) is a
 different thing: a custom food you type macros for, not
 a combo of existing ones.
 
+The unit converter (`pages/Convert.tsx`, `/convert`, kJ↔kcal · lb↔kg · in↔mm)
+deliberately has **no mobile tab** — the bottom bar is already full at six — so
+it's reached from the desktop rail's secondary links and a row at the top of
+Settings. Pairs are declared in `lib/convert.ts` (`CONVERSIONS`); adding one is
+a table entry, not a new form.
+
 AI photo estimation is **itemized**: one photo comes back as one row per
 component (chicken breast 100 g, avocado 65 g, 2 wraps, mayo 15 g), each with
 per-100g macros and `quantityG` = the total on the plate. Countable components
