@@ -54,6 +54,21 @@ Barcode scanning needs HTTPS — served at `https://<host>.<tailnet>.ts.net` via
 it's tailscaled state, not repo config, so rebuilds don't touch it). The pre-1.98
 form with an explicit `https /` mount point now hard-errors.
 
+Saved meals are built *and edited* in one place: `MealBuilder.tsx`, reached from
+the Foods page (tap a saved meal to edit it), the add sheet's "My meals" tab
+(`+ new meal`, or ✎ per row), and a diary selection ("Select → meal" → tick
+logged rows → Create meal, which seeds ingredients from the entries via
+`itemFromEntry`; on desktop shift-click a row to start or extend a selection).
+Passing a `meal` prop switches it to edit mode (PATCH + delete) — `getMeal`
+returns each item's per-100g macros so the editor can re-scale lines locally. Its rows use the diary's own column grammar — the shared
+`MacroTable.tsx` primitives (`MacroHeader`/`MacroCells`/`SlotTotals`) — so
+per-ingredient and total macros read the same as a diary section. A logged meal
+stays visible as a unit in the diary: entries are grouped by `meal_log_id` and
+labelled with the `meal_name` snapshot, drawn as an indented timber-ruled block
+whose rows are still individually editable. Note "new food" (add sheet) is a
+different thing: a custom food you type macros for, not
+a combo of existing ones.
+
 AI photo estimation is **itemized**: one photo comes back as one row per
 component (chicken breast 100 g, avocado 65 g, 2 wraps, mayo 15 g), each with
 per-100g macros and `quantityG` = the total on the plate. Countable components

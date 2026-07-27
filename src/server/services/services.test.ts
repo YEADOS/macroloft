@@ -221,6 +221,33 @@ describe("meals", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.quantityG).toBe(30);
     expect(entries[0]!.mealLogId).toBeTruthy();
+    // The name is snapshotted so the diary can group and label the rows.
+    expect(entries[0]!.mealName).toBe("Shake");
+    const logged = diary.getDay("2026-07-03").slots.snacks!.find((e) => e.id === entries[0]!.id);
+    expect(logged!.mealName).toBe("Shake");
+  });
+
+  test("a logged meal can be deleted from the diary in one call", () => {
+    const whey = foods.searchFoods("whey scoop")[0]!;
+    const meal = mealsSvc.createMeal("Double", [
+      { foodId: whey.id, quantityG: 30 },
+      { foodId: whey.id, quantityG: 60 },
+    ]);
+    const entries = diary.logMeal(meal.id, "snacks", "2026-07-06");
+    diary.logQuick({ proteinG: 5, carbsG: 5, fatG: 5, slot: "snacks", date: "2026-07-06" });
+    expect(diary.deleteMealLog(entries[0]!.mealLogId!)).toBe(2);
+    // The meal's rows go; anything else logged that day stays.
+    expect(diary.getDay("2026-07-06").slots.snacks).toHaveLength(1);
+    expect(() => diary.deleteMealLog(entries[0]!.mealLogId!)).toThrow(/no logged meal/);
+  });
+
+  test("renaming a meal leaves already-logged entries alone", () => {
+    const whey = foods.searchFoods("whey scoop")[0]!;
+    const meal = mealsSvc.createMeal("Pre-gym", [{ foodId: whey.id, quantityG: 30 }]);
+    const [entry] = diary.logMeal(meal.id, "snacks", "2026-07-04");
+    mealsSvc.updateMeal(meal.id, { name: "Post-gym" });
+    const logged = diary.getDay("2026-07-04").slots.snacks!.find((e) => e.id === entry!.id);
+    expect(logged!.mealName).toBe("Pre-gym");
   });
 });
 

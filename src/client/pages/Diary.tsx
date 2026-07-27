@@ -3,87 +3,25 @@ import { DEFAULT_SLOTS } from "@shared/nutrition";
 import {
   apiCreateSlot,
   apiDeleteEntry,
+  apiDeleteMealLog,
   apiDeleteSlot,
   apiUpdateEntry,
   useDay,
   useFood,
   type DiarySlot,
   type Entry,
-  type Totals,
 } from "../lib/api";
 import { humanDate, kcal, g, shiftDate, todayStr } from "../lib/format";
 import { useQueryClient } from "@tanstack/react-query";
 import DayGauge from "../components/DayGauge";
 import AddSheet from "../components/AddSheet";
 import Plant from "../components/Plant";
+import { MacroCells, MacroHeader, SlotTotals, type NutrMode } from "../components/MacroTable";
+import MealBuilder, { itemFromEntry, type BuilderItem } from "../components/MealBuilder";
 
-export type NutrMode = "macros" | "nutrients";
+export type { NutrMode };
 
 const isDefaultSlot = (name: string) => (DEFAULT_SLOTS as readonly string[]).includes(name);
-
-type MacroSource = Pick<Totals, "proteinG" | "carbsG" | "fatG" | "fibreG" | "sugarsG" | "sodiumMg">;
-
-function macroCells(t: MacroSource, mode: NutrMode): [string, string, string, string][] {
-  return mode === "macros"
-    ? [
-        ["P", g(t.proteinG), "var(--chart-protein)", "g"],
-        ["C", g(t.carbsG), "var(--chart-carbs)", "g"],
-        ["F", g(t.fatG), "var(--chart-fat)", "g"],
-      ]
-    : [
-        ["FB", g(t.fibreG), "var(--line)", "g"],
-        ["SU", g(t.sugarsG), "var(--line)", "g"],
-        ["NA", `${Math.round(t.sodiumMg)}`, "var(--line)", "mg"],
-      ];
-}
-
-/** Per-entry numbers: one row of values, aligned under the section's column headers. */
-function MacroCells({ t, mode }: { t: MacroSource; mode: NutrMode }) {
-  return (
-    <span className="grid grid-cols-3 gap-x-3 text-right font-mono text-xs">
-      {macroCells(t, mode).map(([label, value]) => (
-        <span key={label} className="min-w-[2.5rem]">
-          {value}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-/** One header row per section, above the first entry: P/C/F (or FB/SU/NA) + kcal. */
-function MacroHeader({ mode }: { mode: NutrMode }) {
-  const labels = mode === "macros" ? ["P", "C", "F"] : ["FB", "SU", "NA"];
-  return (
-    <div className="flex items-center justify-end gap-3 pb-1.5 font-mono text-[9px] uppercase tracking-wider text-muted">
-      <span className="grid grid-cols-3 gap-x-3 text-right">
-        {labels.map((l) => (
-          <span key={l} className="min-w-[2.5rem]">
-            {l}
-          </span>
-        ))}
-      </span>
-      <span className="w-11 text-right">kcal</span>
-    </div>
-  );
-}
-
-/** Section totals: the legend-style strip — colored swatch, label, number. */
-function SlotTotals({ t, mode }: { t: MacroSource; mode: NutrMode }) {
-  return (
-    <span className="inline-flex items-center gap-4 border rule bg-surface px-3.5 py-1.5 font-mono text-[11px] text-muted">
-      {macroCells(t, mode).map(([label, value, color, unit]) => (
-        <span key={label} className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2" style={{ background: color }} />
-          <span className="uppercase">{label}</span>
-          <span className="font-medium text-ink">
-            {value}
-            <span className="font-normal text-muted">{unit}</span>
-          </span>
-        </span>
-      ))}
-    </span>
-  );
-}
 
 /** Inline editor opened by tapping a row: quantity (grams or servings), move, delete. */
 function EntryEditor({
@@ -236,27 +174,58 @@ function EntryEditor({
   );
 }
 
+/** Quick entries point at no food, so they can't become meal ingredients. */
+const isSelectable = (e: Entry) => e.kind === "food" && e.foodId != null && !!e.quantityG;
+
 function EntryRow({
   entry,
   slots,
   mode,
   onChanged,
+  selecting,
+  selected,
+  onSelect,
 }: {
   entry: Entry;
   slots: DiarySlot[];
   mode: NutrMode;
   onChanged: () => void;
+  selecting: boolean;
+  selected: boolean;
+  /** `range` = shift-click: extend from the last picked row instead of toggling. */
+  onSelect: (range: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const selectable = isSelectable(entry);
   return (
     <div>
       <button
-        onClick={() => setOpen(!open)}
+        // Shift-click picks meal ingredients straight from the diary on desktop —
+        // no need to flip the picker on first.
+        onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+        onClick={(e) => {
+          if (selecting || e.shiftKey) return selectable && onSelect(e.shiftKey);
+          setOpen(!open);
+        }}
+        disabled={selecting && !selectable}
         className={`flex min-h-[48px] w-full items-center justify-between gap-3 py-2.5 text-left active:bg-raised ${
           open ? "bg-raised/50" : ""
-        }`}
+        } ${selecting && !selectable ? "opacity-40" : ""}`}
       >
-        <div className="min-w-0">
+        {selecting && (
+          <span
+            aria-hidden
+            className="flex h-6 w-6 shrink-0 items-center justify-center border rule font-mono text-xs leading-none"
+            style={
+              selected
+                ? { background: "var(--accent)", borderColor: "var(--accent)", color: "#181614" }
+                : undefined
+            }
+          >
+            {selected ? "✓" : ""}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
           <div className="truncate text-sm">{entry.label ?? entry.foodName ?? "…"}</div>
           <div className="font-mono text-[11px] text-muted">
             {entry.kind === "food" ? `${g(entry.quantityG ?? 0)} g` : "quick entry"}
@@ -277,9 +246,121 @@ function EntryRow({
           <span className="w-11 text-right font-mono text-sm">{kcal(entry.energyKcal)}</span>
         </div>
       </button>
-      {open && (
+      {open && !selecting && (
         <EntryEditor entry={entry} slots={slots} onClose={() => setOpen(false)} onChanged={onChanged} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Entries logged together from a saved meal stay a visible unit in the diary.
+ * Grouping is by `mealLogId` rather than adjacency, so an entry that gets moved
+ * or re-sorted still belongs to its meal.
+ */
+type Block =
+  | { kind: "entry"; entry: Entry }
+  | { kind: "meal"; key: string; name: string; entries: Entry[] };
+
+function groupEntries(entries: Entry[]): Block[] {
+  const blocks: Block[] = [];
+  const byMeal = new Map<string, Extract<Block, { kind: "meal" }>>();
+  for (const entry of entries) {
+    const id = entry.mealLogId;
+    if (!id) {
+      blocks.push({ kind: "entry", entry });
+      continue;
+    }
+    const open = byMeal.get(id);
+    if (open) {
+      open.entries.push(entry);
+      continue;
+    }
+    const block = { kind: "meal" as const, key: id, name: entry.mealName ?? "Meal", entries: [entry] };
+    byMeal.set(id, block);
+    blocks.push(block);
+  }
+  return blocks;
+}
+
+/**
+ * The meal wrapper: timber rule + indent, so the rows read as one logged meal.
+ * The right padding pulls the numbers off the tinted edge — meal rows sit a
+ * few pixels inside the section's columns on purpose.
+ */
+function MealGroup({
+  name,
+  entries,
+  selecting,
+  onDeleted,
+  children,
+}: {
+  name: string;
+  entries: Entry[];
+  selecting: boolean;
+  onDeleted: () => void;
+  children: React.ReactNode;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const total = entries.reduce((n, e) => n + e.energyKcal, 0);
+  const mealLogId = entries[0]?.mealLogId;
+  return (
+    <div
+      className="border-l-2 pb-1.5 pl-3 pr-2"
+      style={{
+        borderColor: "var(--timber)",
+        background: "color-mix(in oklab, var(--surface-raised) 45%, transparent)",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2 pt-2">
+        <span className="plaque min-w-0 truncate" style={{ color: "var(--timber)" }}>
+          ▤ {name}
+        </span>
+        {confirming ? (
+          <span className="flex shrink-0 items-center gap-1.5">
+            <button
+              disabled={busy || !mealLogId}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await apiDeleteMealLog(mealLogId!);
+                  onDeleted();
+                } finally {
+                  setBusy(false);
+                  setConfirming(false);
+                }
+              }}
+              className="border rule px-2.5 py-1.5 font-mono text-[11px]"
+              style={{ color: "var(--accent-2)", borderColor: "var(--accent-2)" }}
+            >
+              delete all {entries.length}
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              className="border rule px-2.5 py-1.5 font-mono text-[11px] text-muted"
+            >
+              keep
+            </button>
+          </span>
+        ) : (
+          <span className="flex shrink-0 items-center gap-2">
+            <span className="font-mono text-[11px] text-muted">
+              {entries.length} item{entries.length === 1 ? "" : "s"} · {kcal(total)} kcal
+            </span>
+            {!selecting && (
+              <button
+                onClick={() => setConfirming(true)}
+                title={`Remove all of ${name} from the diary`}
+                className="-mr-1 px-1.5 py-1.5 font-mono text-[11px] text-muted md:hover:text-[var(--accent-2)]"
+              >
+                ✕
+              </button>
+            )}
+          </span>
+        )}
+      </div>
+      <div className="divide-y divide-[var(--line)]/50">{children}</div>
     </div>
   );
 }
@@ -365,6 +446,13 @@ export default function Diary() {
   // One-off sections created this session: keep each visible (while empty) only
   // on the day it was created for — that's the whole point of non-permanent.
   const [ephemeral, setEphemeral] = useState<{ slot: DiarySlot; forDate: string }[]>([]);
+  // Pick logged entries → save them as a reusable meal. Selection is by entry id
+  // and only lives while the picker is open.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<number[]>([]);
+  // Last row picked — the other end of a shift-click range.
+  const [anchor, setAnchor] = useState<number | null>(null);
+  const [mealDraft, setMealDraft] = useState<{ name: string; items: BuilderItem[] } | null>(null);
   const day = useDay(date);
   const qc = useQueryClient();
   const refresh = () => {
@@ -386,8 +474,68 @@ export default function Diary() {
       ]
     : [];
 
+  /** Every selectable row of the day, in the order they're rendered. */
+  const selectableIds = () =>
+    slotList.flatMap((s) => (day.data?.slots[s.name] ?? []).filter(isSelectable).map((e) => e.id));
+
+  const pick = (id: number, range: boolean) => {
+    setSelecting(true);
+    if (range && anchor != null && anchor !== id) {
+      const ids = selectableIds();
+      const from = ids.indexOf(anchor);
+      const to = ids.indexOf(id);
+      if (from >= 0 && to >= 0) {
+        const span = ids.slice(Math.min(from, to), Math.max(from, to) + 1);
+        setSelected((s) => [...new Set([...s, ...span])]);
+        setAnchor(id);
+        return;
+      }
+    }
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+    setAnchor(id);
+  };
+
+  const row = (entry: Entry) => (
+    <EntryRow
+      key={entry.id}
+      entry={entry}
+      slots={slotList}
+      mode={mode}
+      onChanged={refresh}
+      selecting={selecting}
+      selected={selected.includes(entry.id)}
+      onSelect={(range) => pick(entry.id, range)}
+    />
+  );
+
+  const stopSelecting = () => {
+    setSelecting(false);
+    setSelected([]);
+    setAnchor(null);
+  };
+
+  /** Selected entries, in diary order, with the slot they came from. */
+  const selectedEntries = () =>
+    slotList.flatMap((s) =>
+      (day.data?.slots[s.name] ?? [])
+        .filter((e) => selected.includes(e.id))
+        .map((e) => ({ entry: e, slot: s.name })),
+    );
+
+  const buildFromSelection = () => {
+    const picked = selectedEntries();
+    const items = picked.map((p) => itemFromEntry(p.entry)).filter((i): i is BuilderItem => !!i);
+    if (items.length === 0) return;
+    // A selection inside one section is almost always "that meal" — name it so.
+    const slots = new Set(picked.map((p) => p.slot));
+    const name = (slots.size === 1 ? [...slots][0] : "") ?? "";
+    setMealDraft({ name: name.charAt(0).toUpperCase() + name.slice(1), items });
+    stopSelecting();
+  };
+
   return (
-    <div>
+    // Extra bottom room while the selection bar floats over the page.
+    <div className={selecting ? "pb-20" : undefined}>
       <header className="mb-8 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="plaque">Diary</div>
@@ -420,7 +568,16 @@ export default function Diary() {
       {day.data && <DayGauge day={day.data} mode={mode} />}
 
       {day.data && (
-        <div className="mt-5 flex justify-end">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+          <button
+            title="Pick logged foods and save them as a meal — on a desktop, shift-click a row to start"
+            onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+            className={`border rule px-3 py-1.5 font-mono text-[11px] ${
+              selecting ? "bg-raised text-ink" : "text-muted active:bg-raised md:hover:text-ink"
+            }`}
+          >
+            {selecting ? "✕ Cancel select" : "☑ Select → meal"}
+          </button>
           <div className="inline-flex border rule font-mono text-[11px]">
             {(
               [
@@ -467,12 +624,34 @@ export default function Diary() {
                       </button>
                     )}
                   </h2>
-                  <button
-                    onClick={() => setAdding(slot.name)}
-                    className="border rule px-3.5 py-1.5 font-mono text-sm text-amber active:bg-raised md:hover:glow"
-                  >
-                    +
-                  </button>
+                  {selecting ? (
+                    (() => {
+                      const ids = entries.filter(isSelectable).map((e) => e.id);
+                      const allOn = ids.length > 0 && ids.every((id) => selected.includes(id));
+                      return (
+                        <button
+                          disabled={ids.length === 0}
+                          onClick={() =>
+                            setSelected((s) =>
+                              allOn
+                                ? s.filter((id) => !ids.includes(id))
+                                : [...new Set([...s, ...ids])],
+                            )
+                          }
+                          className="border rule px-3 py-1.5 font-mono text-xs text-muted disabled:opacity-30 active:bg-raised md:hover:text-ink"
+                        >
+                          {allOn ? "none" : "all"}
+                        </button>
+                      );
+                    })()
+                  ) : (
+                    <button
+                      onClick={() => setAdding(slot.name)}
+                      className="border rule px-3.5 py-1.5 font-mono text-sm text-amber active:bg-raised md:hover:glow"
+                    >
+                      +
+                    </button>
+                  )}
                 </div>
                 {entries.length > 0 && t && (
                   <div className="mt-3 flex items-center justify-between gap-3 pb-2">
@@ -485,9 +664,21 @@ export default function Diary() {
                 )}
                 <div className="mt-2 divide-y divide-[var(--line)]/50">
                   {entries.length > 0 && <MacroHeader mode={mode} />}
-                  {entries.map((e) => (
-                    <EntryRow key={e.id} entry={e} slots={slotList} mode={mode} onChanged={refresh} />
-                  ))}
+                  {groupEntries(entries).map((block) =>
+                    block.kind === "entry" ? (
+                      row(block.entry)
+                    ) : (
+                      <MealGroup
+                        key={block.key}
+                        name={block.name}
+                        entries={block.entries}
+                        selecting={selecting}
+                        onDeleted={refresh}
+                      >
+                        {block.entries.map(row)}
+                      </MealGroup>
+                    ),
+                  )}
                 </div>
               </section>
             );
@@ -508,6 +699,53 @@ export default function Diary() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {selecting && (
+        <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-40 mt-4 md:bottom-6">
+          <div
+            className="flex items-center justify-between gap-3 border rule px-3 py-2"
+            style={{
+              background: "color-mix(in oklab, var(--surface) 96%, transparent)",
+              backdropFilter: "blur(8px)",
+            }}
+          >
+            <span className="font-mono text-xs text-muted">
+              {selected.length === 0
+                ? "Tap logged foods to pick ingredients"
+                : `${selected.length} selected`}
+              <span className="hidden md:inline"> · shift-click for a range</span>
+            </span>
+            <button
+              disabled={selected.length === 0}
+              onClick={buildFromSelection}
+              className="px-4 py-2.5 font-display text-xs font-bold uppercase tracking-wider disabled:opacity-40"
+              style={{ background: "var(--accent)", color: "#181614" }}
+            >
+              Create meal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mealDraft && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-bg">
+          <div className="mx-auto max-w-2xl px-4 py-5 pb-16">
+            <div className="mb-3">
+              <div className="plaque">From your diary</div>
+              <h2 className="font-display text-2xl font-black uppercase tracking-tight">
+                New meal
+              </h2>
+            </div>
+            <MealBuilder
+              initialName={mealDraft.name}
+              initialItems={mealDraft.items}
+              mode={mode}
+              onSaved={() => setMealDraft(null)}
+              onCancel={() => setMealDraft(null)}
+            />
+          </div>
         </div>
       )}
 

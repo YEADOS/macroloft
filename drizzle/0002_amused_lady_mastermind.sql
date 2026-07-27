@@ -1,0 +1,1 @@
+ALTER TABLE `diary_entries` ADD `meal_name` text;

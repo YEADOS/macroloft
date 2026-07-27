@@ -66,8 +66,11 @@ User-saved recipes / combos.
 - `meal_items`: id, meal_id fk, food_id fk, quantity_g
 
 Logging a meal **expands to individual diary entries** (grouped by a shared
-`meal_log_id` uuid) — so editing one ingredient after logging is trivial and
-history survives later edits to the saved meal.
+`meal_log_id` uuid, labelled by a `meal_name` snapshot) — so editing one
+ingredient after logging is trivial and history survives later edits to the
+saved meal. The diary renders each group as an indented, timber-ruled block;
+the rows inside stay individually editable, and the whole group comes out in one
+call via `DELETE /api/diary/meal-log/:mealLogId`.
 
 ## diary_entries
 
@@ -81,6 +84,7 @@ One row per logged item.
 | kind | text | `'food' \| 'quick'` |
 | food_id | fk, nullable | null for quick entries |
 | meal_log_id | text, nullable | groups entries logged together from a saved meal |
+| meal_name | text, nullable | **snapshot** of the meal's name at log time — labels the diary group |
 | quantity_g | real, nullable | null for quick entries |
 | label | text, nullable | quick-entry description ("pub lunch") |
 | energy_kcal | real | **snapshot** at log time |

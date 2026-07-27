@@ -19,6 +19,7 @@ import {
 import { downscaleImage } from "../lib/image";
 import { kcal, g } from "../lib/format";
 import BarcodeScanner from "./BarcodeScanner";
+import MealBuilder from "./MealBuilder";
 import PhotoReview from "./PhotoReview";
 
 type Tab = "search" | "quick" | "photo" | "meals" | "new";
@@ -305,6 +306,10 @@ export default function AddSheet({
   const [picked, setPicked] = useState<Food | null>(null);
   const [prefillG, setPrefillG] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
+  // "My meals" doubles as the meal builder — the same tab you log a saved meal
+  // from is where you make a new one.
+  const [buildingMeal, setBuildingMeal] = useState(false);
+  const [editingMealId, setEditingMealId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Photo estimation → itemised review list on the same tab. A non-null
@@ -317,6 +322,7 @@ export default function AddSheet({
   const search = useFoodSearch(q);
   const recent = useRecentFoods();
   const meals = useMeals();
+  const editingMeal = meals.data?.find((m) => m.id === editingMealId);
   const aiConfig = useAiConfig();
   const navigate = useNavigate();
 
@@ -414,7 +420,14 @@ export default function AddSheet({
           ).map(([t, label]) => (
             <button
               key={t}
-              onClick={() => { setTab(t); setPicked(null); setPrefillG(null); setError(null); }}
+              onClick={() => {
+                setTab(t);
+                setPicked(null);
+                setPrefillG(null);
+                setError(null);
+                setBuildingMeal(false);
+                setEditingMealId(null);
+              }}
               className={`plaque whitespace-nowrap border-b-2 px-3 py-2.5 ${
                 tab === t ? "border-[var(--accent)] !text-ink" : "border-transparent"
               }`}
@@ -621,28 +634,57 @@ export default function AddSheet({
           </div>
         )}
 
-        {tab === "meals" && (
+        {tab === "meals" && (buildingMeal || editingMeal) && (
+          <div className="mt-4">
+            <MealBuilder
+              key={editingMeal?.id ?? "new"}
+              meal={editingMeal}
+              onSaved={() => { setBuildingMeal(false); setEditingMealId(null); }}
+              onCancel={() => { setBuildingMeal(false); setEditingMealId(null); }}
+              onDeleted={() => setEditingMealId(null)}
+            />
+          </div>
+        )}
+
+        {tab === "meals" && !buildingMeal && !editingMeal && (
           <div className="mt-2">
+            <div className="flex items-center justify-between gap-3 border-b rule pb-2 pt-1">
+              <span className="plaque">Tap a meal to log it</span>
+              <button
+                onClick={() => setBuildingMeal(true)}
+                className="border rule px-3 py-1.5 font-mono text-xs text-amber active:bg-raised md:hover:glow"
+              >
+                + new meal
+              </button>
+            </div>
             {meals.data?.length === 0 && (
               <div className="py-8 text-center font-mono text-sm text-muted">
-                No saved meals yet — build one on the Foods page.
+                No saved meals yet — hit “+ new meal” to build one from ingredients.
               </div>
             )}
             {meals.data?.map((m) => (
-              <button
-                key={m.id}
-                disabled={busy}
-                onClick={() => run(() => apiLogMeal({ mealId: m.id, slot, date }))}
-                className="flex w-full items-baseline justify-between border-b rule py-3 text-left hover:bg-raised"
-              >
-                <div>
-                  <div className="text-sm">{m.name}</div>
-                  <div className="font-mono text-[11px] text-muted">
-                    {m.items.length} items · P{g(m.totals.proteinG)} C{g(m.totals.carbsG)} F{g(m.totals.fatG)}
+              <div key={m.id} className="flex items-stretch gap-2 border-b rule">
+                <button
+                  disabled={busy}
+                  onClick={() => run(() => apiLogMeal({ mealId: m.id, slot, date }))}
+                  className="flex min-w-0 flex-1 items-baseline justify-between gap-3 py-3 text-left active:bg-raised md:hover:bg-raised"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm">{m.name}</div>
+                    <div className="font-mono text-[11px] text-muted">
+                      {m.items.length} items · P{g(m.totals.proteinG)} C{g(m.totals.carbsG)} F{g(m.totals.fatG)}
+                    </div>
                   </div>
-                </div>
-                <div className="font-mono text-sm">{kcal(m.totals.energyKcal)}</div>
-              </button>
+                  <div className="shrink-0 font-mono text-sm">{kcal(m.totals.energyKcal)}</div>
+                </button>
+                <button
+                  onClick={() => setEditingMealId(m.id)}
+                  title={`Edit ${m.name}`}
+                  className="shrink-0 px-3 font-mono text-xs text-muted active:bg-raised md:hover:text-ink"
+                >
+                  ✎
+                </button>
+              </div>
             ))}
           </div>
         )}

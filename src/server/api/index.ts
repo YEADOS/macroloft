@@ -134,6 +134,10 @@ api.delete("/diary/entries/:id", (c) => {
   diary.deleteEntry(Number(c.req.param("id")));
   return c.body(null, 204);
 });
+// Every entry from one logged meal, in one call.
+api.delete("/diary/meal-log/:mealLogId", (c) =>
+  c.json({ deleted: diary.deleteMealLog(c.req.param("mealLogId")) }),
+);
 
 // --- diary sections (slots) ---
 api.get("/slots", (c) => c.json(slots.listSlots()));

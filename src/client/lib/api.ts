@@ -43,7 +43,10 @@ export interface Entry {
   slot: Slot;
   kind: "food" | "quick";
   foodId: number | null;
+  /** Set on every entry logged from one saved meal — the grouping key. */
   mealLogId: string | null;
+  /** The meal's name as it was when logged. */
+  mealName: string | null;
   quantityG: number | null;
   label: string | null;
   foodName: string | null;
@@ -96,11 +99,28 @@ export interface Day {
   goals: Goals | null;
   remaining: { energyKcal: number; proteinG: number | null; carbsG: number | null; fatG: number | null } | null;
 }
+export interface MealItem {
+  id: number;
+  foodId: number;
+  foodName: string;
+  brand: string | null;
+  quantityG: number;
+  /** The food's nutrients per 100 g — lets the UI re-scale a line locally. */
+  per100: {
+    energyKcal: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+    fibreG: number | null;
+    sugarsG: number | null;
+    sodiumMg: number | null;
+  };
+}
 export interface MealSummary {
   id: number;
   name: string;
   notes: string | null;
-  items: { id: number; foodId: number; foodName: string; quantityG: number }[];
+  items: MealItem[];
   totals: { energyKcal: number; proteinG: number; carbsG: number; fatG: number };
 }
 export interface WeightHistory {
@@ -254,6 +274,10 @@ export const apiUpdateEntry = (id: number, patch: object) =>
 export const apiDeleteEntry = (id: number) =>
   http<void>(`/diary/entries/${id}`, { method: "DELETE" });
 
+/** Removes every entry logged together from one saved meal. */
+export const apiDeleteMealLog = (mealLogId: string) =>
+  http<{ deleted: number }>(`/diary/meal-log/${mealLogId}`, { method: "DELETE" });
+
 export const apiCreateFood = (input: object) =>
   http<Food>("/foods", { method: "POST", body: JSON.stringify(input) });
 
@@ -264,6 +288,11 @@ export const apiAddServing = (foodId: number, input: { name: string; grams: numb
 
 export const apiCreateMeal = (input: { name: string; items: { foodId: number; quantityG: number }[]; notes?: string }) =>
   http<MealSummary>("/meals", { method: "POST", body: JSON.stringify(input) });
+
+export const apiUpdateMeal = (
+  id: number,
+  patch: { name?: string; items?: { foodId: number; quantityG: number }[]; notes?: string },
+) => http<MealSummary>(`/meals/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 
 export const apiDeleteMeal = (id: number) => http<void>(`/meals/${id}`, { method: "DELETE" });
 

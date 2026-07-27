@@ -9,10 +9,41 @@ export interface MealItemInput {
   quantityG: number;
 }
 
+/**
+ * One ingredient, with the food's per-100g nutrients alongside the amount — so
+ * a client (or a model) can show and re-scale each line without refetching foods.
+ */
+export interface MealItemDetail {
+  id: number;
+  foodId: number;
+  foodName: string;
+  brand: string | null;
+  quantityG: number;
+  per100: {
+    energyKcal: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+    fibreG: number | null;
+    sugarsG: number | null;
+    sodiumMg: number | null;
+  };
+}
+
 export interface MealWithItems extends Meal {
-  items: { id: number; foodId: number; foodName: string; quantityG: number }[];
+  items: MealItemDetail[];
   totals: { energyKcal: number; proteinG: number; carbsG: number; fatG: number };
 }
+
+const ZERO_PER100: MealItemDetail["per100"] = {
+  energyKcal: 0,
+  proteinG: 0,
+  carbsG: 0,
+  fatG: 0,
+  fibreG: null,
+  sugarsG: null,
+  sodiumMg: null,
+};
 
 function mealTotals(items: MealItemInput[]) {
   const t = { energyKcal: 0, proteinG: 0, carbsG: 0, fatG: 0 };
@@ -38,12 +69,27 @@ export function getMeal(id: number): MealWithItems | null {
   const items = db.select().from(mealItems).where(eq(mealItems.mealId, id)).all();
   return {
     ...meal,
-    items: items.map((i) => ({
-      id: i.id,
-      foodId: i.foodId,
-      foodName: getFood(i.foodId)?.name ?? `food #${i.foodId}`,
-      quantityG: i.quantityG,
-    })),
+    items: items.map((i) => {
+      const food = getFood(i.foodId);
+      return {
+        id: i.id,
+        foodId: i.foodId,
+        foodName: food?.name ?? `food #${i.foodId}`,
+        brand: food?.brand ?? null,
+        quantityG: i.quantityG,
+        per100: food
+          ? {
+              energyKcal: food.energyKcal,
+              proteinG: food.proteinG,
+              carbsG: food.carbsG,
+              fatG: food.fatG,
+              fibreG: food.fibreG,
+              sugarsG: food.sugarsG,
+              sodiumMg: food.sodiumMg,
+            }
+          : ZERO_PER100,
+      };
+    }),
     totals: mealTotals(items),
   };
 }

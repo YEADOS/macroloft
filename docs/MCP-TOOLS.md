@@ -40,7 +40,7 @@ are rejected with the valid list in the error message.
 
 | tool | input |
 |---|---|
-| `list_meals` | — (returns names, ids, computed totals) |
+| `list_meals` | — (returns names, ids, computed totals, and each item's amount + per-100g macros) |
 | `create_meal` | name, items: [{food_id, quantity_g}], notes? |
 | `update_meal` / `delete_meal` | meal_id, … |
 

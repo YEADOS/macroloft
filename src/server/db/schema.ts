@@ -84,6 +84,9 @@ export const diaryEntries = sqliteTable(
     kind: text("kind", { enum: ["food", "quick"] }).notNull(),
     foodId: integer("food_id").references(() => foods.id),
     mealLogId: text("meal_log_id"),
+    // Snapshot of the meal's name at log time, so a renamed or deleted meal
+    // doesn't rewrite history — the diary group keeps the name you logged.
+    mealName: text("meal_name"),
     quantityG: real("quantity_g"),
     label: text("label"),
     // Snapshots at log time — never recomputed from foods afterwards.

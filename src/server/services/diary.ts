@@ -111,10 +111,10 @@ export function logMeal(
       date,
     });
     db.update(diaryEntries)
-      .set({ mealLogId })
+      .set({ mealLogId, mealName: meal.name })
       .where(eq(diaryEntries.id, entry.id))
       .run();
-    entries.push({ ...entry, mealLogId });
+    entries.push({ ...entry, mealLogId, mealName: meal.name });
   }
   return entries;
 }
@@ -161,6 +161,22 @@ export function deleteEntry(id: number) {
   const existing = db.select().from(diaryEntries).where(eq(diaryEntries.id, id)).get();
   if (!existing) throw new Error(`no diary entry with id ${id}`);
   db.delete(diaryEntries).where(eq(diaryEntries.id, id)).run();
+}
+
+/**
+ * Remove every entry logged together from one saved meal, in one go — the diary
+ * shows them as a unit, so they come out as a unit. Returns how many went.
+ */
+export function deleteMealLog(mealLogId: string): number {
+  const rows = db
+    .select()
+    .from(diaryEntries)
+    .where(eq(diaryEntries.mealLogId, mealLogId))
+    .all();
+  if (rows.length === 0)
+    throw new Error(`no logged meal with mealLogId ${mealLogId}; get the day first`);
+  db.delete(diaryEntries).where(eq(diaryEntries.mealLogId, mealLogId)).run();
+  return rows.length;
 }
 
 export interface DayTotals {
