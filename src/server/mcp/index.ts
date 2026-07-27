@@ -311,14 +311,20 @@ export function buildMcpServer(): McpServer {
     "estimate_food_from_photo",
     {
       description:
-        "Estimate a food's name and per-100g macros from a photo. Returns an UNSAVED draft { food, note }: the `food` object is ready to pass to create_food (then log_food) once the user confirms it — nothing is saved until you do. Nutrients are per 100 g; food.servings[0].grams is the estimated weight of the portion shown. Requires AI estimation to be enabled in Settings. image_base64 is the base64 of a JPEG/PNG/WebP (a data: URL prefix is fine).",
+        "Break a photographed meal into its component foods and estimate each one. Returns an UNSAVED draft { name?, items[], note? } — nothing is saved until you act on it. Each item is one ingredient (chicken breast, avocado, the wrap, the mayo) with macros PER 100 G plus `quantityG`, the TOTAL grams of that component in the photo. Countable items also carry `count`, `unit` and `unitGrams` (e.g. count 2, unit 'wrap', unitGrams 60, quantityG 120) — always tell the user the count so they can see whether both halves / both wraps were included before confirming. To log a confirmed item: create_food with its name/brand/per-100g macros (a good serving is { name: unit, grams: unitGrams }), then log_food with quantityG. Requires AI estimation to be enabled in Settings. image_base64 is the base64 of a JPEG/PNG/WebP (a data: URL prefix is fine). Pass `description` whenever the user mentions anything the camera can't show — hidden ingredients ('with honey on top'), cooking method ('fried in butter'), or how much of it they ate — it materially improves the estimate.",
       inputSchema: {
         image_base64: z.string(),
         mime_type: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
+        description: z
+          .string()
+          .optional()
+          .describe(
+            "Optional free-text hint from the user about the food: ingredients not visible in the photo, portion size, or how it was cooked.",
+          ),
       },
     },
-    async ({ image_base64, mime_type }) =>
-      json(await vision.estimateFoodFromPhoto(image_base64, mime_type ?? "image/jpeg")),
+    async ({ image_base64, mime_type, description }) =>
+      json(await vision.estimateFoodFromPhoto(image_base64, mime_type ?? "image/jpeg", description)),
   );
 
   server.registerTool(

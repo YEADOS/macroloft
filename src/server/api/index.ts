@@ -231,11 +231,12 @@ api.post(
       mimeType: z
         .string()
         .regex(/^image\/(jpeg|png|webp|gif)$/, "expected image/jpeg, image/png, image/webp or image/gif"),
+      description: z.string().optional(),
     }),
   ),
   async (c) => {
-    const { imageBase64, mimeType } = c.req.valid("json");
-    return c.json(await vision.estimateFoodFromPhoto(imageBase64, mimeType));
+    const { imageBase64, mimeType, description } = c.req.valid("json");
+    return c.json(await vision.estimateFoodFromPhoto(imageBase64, mimeType, description));
   },
 );
 api.get("/ai/config", (c) => c.json(maskedAiConfig()));

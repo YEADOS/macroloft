@@ -137,6 +137,6 @@ input, select, textarea {
   color: var(--text);
   padding: 0.5rem 0.75rem;
 }
-input::placeholder { color: var(--text-muted); }
+input::placeholder, textarea::placeholder { color: var(--text-muted); }
 
 ::selection { background: color-mix(in oklab, var(--accent) 35%, transparent); }

@@ -54,7 +54,16 @@ Barcode scanning needs HTTPS — served at `https://<host>.<tailnet>.ts.net` via
 it's tailscaled state, not repo config, so rebuilds don't touch it). The pre-1.98
 form with an explicit `https /` mount point now hard-errors.
 
-AI photo estimation lives in `src/server/services/vision.ts` +
+AI photo estimation is **itemized**: one photo comes back as one row per
+component (chicken breast 100 g, avocado 65 g, 2 wraps, mayo 15 g), each with
+per-100g macros and `quantityG` = the total on the plate. Countable components
+also carry `count`/`unit`/`unitGrams` — `normalizePortion()` guarantees all
+three are present with `count * unitGrams === quantityG`, or none are, which is
+what lets the UI say "AI counted 2 × wrap at 60 g each" instead of leaving you
+to guess whether to hit ×2. `PhotoReview.tsx` is the confirm screen; logging
+loops `POST /foods` + `POST /diary/entries` per item — no new save path.
+
+The service lives in `src/server/services/vision.ts` +
 `src/server/services/ai/` (pluggable `openai-compatible`/`anthropic` adapters,
 plain `fetch`, no SDK). Config is in the `settings` table (`ai_*` keys) and
 editable via the Settings page / `GET|PUT /api/ai/config`; the API key also

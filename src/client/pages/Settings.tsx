@@ -227,6 +227,18 @@ export default function Settings() {
           models usually need no key.
         </p>
       </section>
+
+      <p className="plaque mt-10 pb-2 text-center">
+        Made by{" "}
+        <a
+          href="https://nicholasyeadon.com"
+          target="_blank"
+          rel="noopener"
+          className="text-timber underline underline-offset-2 md:hover:text-amber"
+        >
+          Nick Yeadon
+        </a>
+      </p>
     </div>
   );
 }

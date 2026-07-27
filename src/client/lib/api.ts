@@ -133,21 +133,34 @@ export interface AiConfig {
   hasKey: boolean;
   keyFromEnv: boolean;
 }
-/** Draft food from a photo — mirrors the server's per-100g CreateFoodInput. */
-export interface FoodEstimate {
-  food: {
-    name: string;
-    brand?: string;
-    energyKcal?: number;
-    proteinG: number;
-    carbsG: number;
-    fatG: number;
-    satFatG?: number;
-    sugarsG?: number;
-    fibreG?: number;
-    sodiumMg?: number;
-    servings?: { name: string; grams: number }[];
-  };
+/**
+ * One component of a photographed meal: per-100g nutrients (the server's
+ * CreateFoodInput shape) plus how much of it is on the plate. count/unit/
+ * unitGrams either all arrive together, with count * unitGrams === quantityG,
+ * or not at all — see normalizePortion in services/vision.ts.
+ */
+export interface EstimateItem {
+  name: string;
+  brand?: string;
+  energyKcal?: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  satFatG?: number;
+  sugarsG?: number;
+  fibreG?: number;
+  sodiumMg?: number;
+  /** Total grams of this component in the photo, across every piece. */
+  quantityG: number;
+  count?: number;
+  unit?: string;
+  unitGrams?: number;
+  note?: string;
+}
+/** Itemised draft from a photo — nothing is saved until the user confirms. */
+export interface MealEstimate {
+  name?: string;
+  items: EstimateItem[];
   note?: string;
 }
 export interface AiTestResult {
@@ -273,10 +286,10 @@ export const apiSetAiConfig = (patch: {
   timeoutMs?: number;
 }) => http<AiConfig>("/ai/config", { method: "PUT", body: JSON.stringify(patch) });
 
-export const apiEstimatePhoto = (imageBase64: string, mimeType: string) =>
-  http<FoodEstimate>("/ai/estimate", {
+export const apiEstimatePhoto = (imageBase64: string, mimeType: string, description?: string) =>
+  http<MealEstimate>("/ai/estimate", {
     method: "POST",
-    body: JSON.stringify({ imageBase64, mimeType }),
+    body: JSON.stringify({ imageBase64, mimeType, description: description || undefined }),
   });
 
 export const apiTestAi = () => http<AiTestResult>("/ai/test", { method: "POST" });

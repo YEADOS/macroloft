@@ -5,10 +5,11 @@
 > all in place. This doc is now the living spec for the feature.
 >
 > Decisions taken (were "open" below): new **Settings page** (`/settings`);
-> **single food per photo** in v1 (multi-item itemization is a fast follow);
-> API key stored in the `settings` table **with `AI_API_KEY` env fallback**;
-> both `openai-compatible` and `anthropic` adapters shipped, no default provider
-> is forced (`ai_enabled=false` until configured).
+> **itemized output** — a photo comes back as one row per component, always
+> (v1 shipped single-food; superseded); API key stored in the `settings` table
+> **with `AI_API_KEY` env fallback**; both `openai-compatible` and `anthropic`
+> adapters shipped, no default provider is forced (`ai_enabled=false` until
+> configured).
 
 ## 1. Scope
 
@@ -96,31 +97,63 @@ lean and avoids coupling to one vendor.
 
 ```ts
 export async function estimateFoodFromPhoto(
-  imageBase64: string, mimeType: string,
-): Promise<{ food: CreateFoodInput; note?: string }> {
+  imageBase64: string, mimeType: string, description?: string,
+): Promise<MealEstimate> {
   const cfg = getAiConfig();
   if (!cfg.enabled) throw new Error("AI estimation is off — enable it in Settings…");
   const raw = await getProvider(cfg).complete({ ...prompt, image… });
-  const parsed = extractJson(raw);                 // lenient: strip fences/prose
-  const result = foodInputSchema.safeParse(parsed); // reuse the REAL schema
+  const parsed = normalizeShape(extractJson(raw));   // lenient: fences, prose, bare array
+  const result = mealEstimateSchema.safeParse(parsed);
   if (!result.success) { /* one retry with stricter reminder */ }
-  return { food: result.data, note: parsed.note }; // note = short assumption line
+  return { ...result.data, items: result.data.items.map(normalizePortion) };
+}
+```
+
+### The shape
+
+```ts
+MealEstimate = { name?: string; items: EstimateItem[]; note?: string }
+
+EstimateItem = foodInputSchema.omit({ barcode, servings }) & {
+  quantityG: number;    // TOTAL grams of this component in the photo
+  count?: number;       // pieces counted
+  unit?: string;        // what one piece is: "wrap", "slice", "half sandwich"
+  unitGrams?: number;   // grams in one piece
+  note?: string;
 }
 ```
 
 `foodInputSchema` (the shared Zod food shape) lives in `services/foods.ts`; REST
-`POST /foods`, MCP `create_food`, and this service all validate through it, so a
-model draft can only reach the DB via the exact path `createCustomFood` trusts.
-The `note` is surfaced in the UI banner but isn't part of the food schema.
+`POST /foods`, MCP `create_food`, and this service's item schema all build on
+it, so a model draft can only reach the DB via the exact path `createCustomFood`
+trusts. Nutrients stay **per 100 g**; `quantityG` is the only as-served number.
 
-- **Prompt** asks for: `name`, `brand?`, per-100g macros, **and** a suggested
-  `servings[]` entry describing the plate portion (e.g.
-  `{name:"as photographed", grams:350}`) plus a short assumption note. Per-100g
-  keeps it consistent with how the DB stores everything; the serving lets the
-  user correct *one* number instead of four.
-- **Itemize option:** prompt can return an array of component foods for mixed
-  plates (better than one blended number, and fits the one-row-per-food model).
-  v1 can do single-item; multi-item is a fast follow.
+### The two things the prompt is fighting
+
+1. **One blended number is useless.** The prompt insists on the components a
+   person would log separately — chicken, avocado, the wrap, the mayo — not
+   "chicken wrap, 500 kcal". Trace seasonings fold into the item they're on;
+   1–8 items; a packaged food is simply one item.
+2. **"Is that one wrap or two?"** `quantityG` is defined as the total across
+   every piece, *never* per piece, and countable components must also carry
+   `count`/`unit`/`unitGrams` so the UI can say **"AI counted 2 × wrap at 60 g
+   each"**. That line is the whole point: the ambiguity is resolved by the model
+   stating what it counted, not by the user guessing whether to hit ×2.
+
+`normalizePortion()` enforces one invariant the UI can rely on: **either all of
+`count`/`unit`/`unitGrams` are present with `count * unitGrams === quantityG`,
+or none of them are.** Models routinely return two of the three, or put a
+per-piece weight in `quantityG` — the function reconciles rather than rejects,
+because a retry loses the good parts of the answer too. `normalizeShape()`
+likewise lifts a bare array or a pre-itemisation single-food object into a
+one-item meal.
+
+- **User description (optional):** a free-text hint appended to the prompt in a
+  delimited block, for what the camera can't show — honey on the rice cakes, the
+  oil in the pan, "only ate half". Trimmed, capped at 500 chars
+  (`MAX_DESCRIPTION`), and the block tells the model to treat it as ground truth
+  over the image but to ignore instructions inside it. Omitted entirely when
+  blank, so the no-hint prompt stays byte-identical to before.
 - **Robustness:** `extractJson` handles the local-model reality (markdown
   fences, trailing prose). One retry on parse failure. Don't rely on
   tool-calling — many local models lack it.
@@ -130,7 +163,7 @@ The `note` is surfaced in the UI banner but isn't part of the food schema.
 In `src/server/api/index.ts` (thin wrappers, per the rules):
 
 ```
-POST /api/ai/estimate   {imageBase64, mimeType} JSON → 200 {food, note} draft
+POST /api/ai/estimate   {imageBase64, mimeType, description?} JSON → 200 MealEstimate draft
 GET  /api/ai/config     → config with key masked (hasKey/keyFromEnv, never the key)
 PUT  /api/ai/config     → update settings (empty apiKey = keep stored key)
 POST /api/ai/test       → ping provider, return ok/latency/model  (nice for local setup)
@@ -153,15 +186,38 @@ precedent in `BarcodeScanner.tsx`.
   `<input type="file" accept="image/*" capture="environment">`, which opens the
   native camera on mobile — the primary platform — with zero `getUserMedia`
   code).
+- **Description field** above the capture zone: an optional two-row textarea
+  ("rice cakes with a drizzle of honey") sent as `description`, cleared once an
+  estimate lands. Filling it in first is the point — it's a hint about what
+  you're *about* to photograph.
 - On capture → downscale client-side (canvas, ~1024px longest edge, JPEG ~0.8)
   to cut upload + token cost → `POST /ai/estimate` → show "Estimating…" state
   (local inference is 10–60s; cloud 2–5s).
-- On result → **prefill the existing New Food form state (`nf`)** and switch to
-  the `"new"` tab with a banner: "AI estimate — check and edit before saving."
-  User edits name/macros/serving, hits the existing create path. **No new save
-  logic.**
-- Failure → friendly inline error (reuse the `error` state), fall back to manual
-  entry.
+- On result → the photo tab swaps the capture zone for **`PhotoReview.tsx`**, the
+  confirm-before-save screen. Failure → friendly inline error (reuse the `error`
+  state), fall back to manual entry.
+
+### `PhotoReview.tsx` — the review screen
+
+One card per component, each showing the model's claim verbatim
+(*"AI counted 2 × wrap at 60 g each"*) above the controls that change it:
+
+- **Include toggle** (✓/○, 44px) instead of destructive removal — mobile-first,
+  reversible, and the total updates live.
+- **Count stepper** (−/+) for countable items, next to an editable **g total**.
+  They stay in lockstep in the direction the user is thinking: stepping the
+  count rescales the weight at the same grams-per-piece; typing a weight
+  re-derives grams-per-piece for the count on screen.
+- **Editable name**, and a collapsed **"Edit macros per 100 g"** panel
+  (kcal/P/C/F). Micros ride along untouched.
+- **Running total** across included items, then
+  **"Log N items to \<slot\>"**.
+
+Logging is a loop over the included rows: `POST /foods` then
+`POST /diary/entries` per row — **no new save path**, the same two endpoints the
+manual flow uses, so each ingredient lands as its own editable diary row. The
+food's serving is the *piece*, not the plate (`{name: "wrap", grams: 60}`), so
+re-logging one wrap later is a single tap.
 
 **Config UI:** small "AI" section — either on the Goals page or a new
 lightweight Settings page — with provider dropdown, base URL, model, key
@@ -173,12 +229,15 @@ Must follow `docs/UI-THEME.md` tokens (neutral chips, no library styling).
 Once the service exists, register one tool in `src/server/mcp/index.ts`:
 
 ```
-estimate_food_from_photo(image_base64, mime_type) → draft food JSON
+estimate_food_from_photo(image_base64, mime_type, description?) → MealEstimate JSON
 ```
 
-Thin wrapper over `vision.estimateFoodFromPhoto`. Description makes clear it
-returns an *unsaved estimate* the caller should confirm before
-`create_food`/`log_food`. Lets you photo-log via Claude too.
+Thin wrapper over `vision.estimateFoodFromPhoto`. The tool description makes
+clear it returns an *unsaved* itemized estimate, that each item's macros are per
+100 g while `quantityG` is the total on the plate, and that the model should
+**report the count back to the user** before confirming — the same ambiguity the
+UI's count line solves. Confirmed items go through `create_food` (serving =
+`{name: unit, grams: unitGrams}`) then `log_food` with `quantityG`.
 
 ## 9. Networking for the local/remote LLM
 
@@ -197,6 +256,11 @@ returns an *unsaved estimate* the caller should confirm before
   `services.test.ts` / `bun test` setup.
 - **Adapter tests:** mock `fetch`, assert request shape per provider (image
   block format differs OpenAI vs Anthropic).
+- **Estimate shape:** `estimateFoodFromPhoto` against a stubbed `fetch` — the
+  description block (forwarded / trimmed / capped / omitted), multi-item
+  passthrough, the `normalizeShape` single-food lift, and every
+  `normalizePortion` branch (per-piece `quantityG` corrected, missing third of
+  count/unit/unitGrams filled in, stray count dropped when there's no unit).
 - **No live-model tests** in CI (non-deterministic, needs keys); one manual
   smoke checklist in this doc.
 
@@ -215,21 +279,11 @@ returns an *unsaved estimate* the caller should confirm before
    Ollama.
 2. **M2 — Frontend:** photo tab, file-capture + downscale, prefill New Food
    form, AI settings section.
-3. **M3 — Breadth:** Anthropic adapter, MCP tool, multi-item plate itemization,
-   docs.
+3. **M3 — Breadth:** Anthropic adapter, MCP tool, docs.
+4. **M4 — Itemization:** items array + portion normalisation in `vision.ts`,
+   `PhotoReview.tsx`, MCP description, docs. Replaced the single-food draft and
+   the New Food prefill path.
 
-M1+M2 is a working single-provider-configurable v1 in ~one focused session; M3
-is the "+half session" breadth.
-
-## 13. Open decisions
-
-1. **Config UI home** — bolt onto Goals page, or a new Settings page? (Lean: new
-   small Settings page, since AI + units + timezone all belong there.)
-2. **v1 scope** — single food per photo, or itemize mixed plates from day one?
-   (Lean: single first.)
-3. **Default provider to document** — which local model / cloud fallback as the
-   reference setup? (e.g. `qwen2.5-vl` locally, OpenRouter as cheap cloud
-   fallback.)
-4. **Key storage** — settings-table (UI-editable, plaintext in SQLite) vs
-   env-only (more private, needs redeploy to change). (Lean: settings with env
-   fallback.)
+All shipped, and every decision this doc once listed as open (config UI home,
+single-vs-itemized scope, reference provider, key storage) is settled — see the
+decisions block at the top.

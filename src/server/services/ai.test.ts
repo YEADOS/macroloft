@@ -7,6 +7,7 @@ const { migrate } = await import("drizzle-orm/bun-sqlite/migrator");
 const { extractJson } = await import("./ai/extract");
 const { getProvider } = await import("./ai/provider");
 const config = await import("./ai/config");
+const { estimateFoodFromPhoto } = await import("./vision");
 
 beforeAll(() => {
   migrate(db, { migrationsFolder: `${import.meta.dir}/../../../drizzle` });
@@ -124,5 +125,126 @@ describe("adapters", () => {
     const block = body.messages[0].content[1];
     expect(block.type).toBe("image");
     expect(block.source).toEqual({ type: "base64", media_type: "image/png", data: "BBBB" });
+  });
+});
+
+describe("estimateFoodFromPhoto", () => {
+  const item = (over: Record<string, unknown> = {}) => ({
+    name: "rice cakes",
+    quantityG: 40,
+    proteinG: 7,
+    carbsG: 80,
+    fatG: 1,
+    ...over,
+  });
+  const estimate = { name: "rice cakes with honey", items: [item()] };
+  const prompt = (calls: { init: RequestInit }[]) =>
+    JSON.parse(calls[0]!.init.body as string).messages[0].content[0].text as string;
+  const reply = (body: unknown) =>
+    stubFetch({ choices: [{ message: { content: JSON.stringify(body) } }] });
+
+  beforeAll(() => {
+    config.setAiConfig({
+      enabled: true,
+      provider: "openai-compatible",
+      baseUrl: "http://gpu-box:11434/v1",
+      model: "qwen2.5-vl",
+      apiKey: "sk-test",
+    });
+  });
+
+  test("forwards the user's description to the model", async () => {
+    const calls = reply(estimate);
+    const out = await estimateFoodFromPhoto("data:image/jpeg;base64,AAAA", "image/jpeg", "  with honey on top  ");
+    expect(out.items[0]!.name).toBe("rice cakes");
+    const text = prompt(calls);
+    expect(text).toContain("with honey on top");
+    expect(text).not.toContain("  with honey"); // trimmed
+  });
+
+  test("omits the description block when none is given", async () => {
+    const calls = reply(estimate);
+    await estimateFoodFromPhoto("AAAA", "image/jpeg", "   ");
+    expect(prompt(calls)).not.toContain("The person who took the photo describes it as");
+  });
+
+  test("caps an over-long description", async () => {
+    const calls = reply(estimate);
+    await estimateFoodFromPhoto("AAAA", "image/jpeg", "x".repeat(900));
+    expect(prompt(calls)).toContain("x".repeat(500));
+    expect(prompt(calls)).not.toContain("x".repeat(501));
+  });
+
+  test("keeps every component the model returns", async () => {
+    reply({
+      name: "chicken avo wrap",
+      items: [
+        item({ name: "chicken breast", quantityG: 100, proteinG: 31, carbsG: 0, fatG: 3.6 }),
+        item({ name: "avocado", quantityG: 65, proteinG: 2, carbsG: 9, fatG: 15 }),
+      ],
+    });
+    const out = await estimateFoodFromPhoto("AAAA", "image/jpeg");
+    expect(out.name).toBe("chicken avo wrap");
+    expect(out.items.map((i) => i.name)).toEqual(["chicken breast", "avocado"]);
+  });
+
+  describe("portion normalisation", () => {
+    const only = async (over: Record<string, unknown>) => {
+      reply({ items: [item(over)] });
+      return (await estimateFoodFromPhoto("AAAA", "image/jpeg")).items[0]!;
+    };
+
+    test("count x unitGrams wins over a per-piece quantityG", async () => {
+      // The exact confusion the count line exists to kill: the model counted two
+      // wraps but put one wrap's weight in quantityG.
+      const out = await only({ unit: "wrap", count: 2, unitGrams: 60, quantityG: 60 });
+      expect(out.quantityG).toBe(120);
+      expect(out.count).toBe(2);
+    });
+
+    test("fills in the missing third of count/unit/unitGrams", async () => {
+      expect(await only({ unit: "slice", count: 4, quantityG: 130 })).toMatchObject({
+        count: 4,
+        unitGrams: 32.5,
+        quantityG: 130,
+      });
+      expect(await only({ unit: "wrap", unitGrams: 60, quantityG: 120 })).toMatchObject({
+        count: 2,
+        quantityG: 120,
+      });
+      expect(await only({ unit: "half sandwich", quantityG: 150 })).toMatchObject({
+        count: 1,
+        unitGrams: 150,
+      });
+    });
+
+    test("drops a stray count when there is no unit to count", async () => {
+      const out = await only({ count: 3, unitGrams: 20, quantityG: 60 });
+      expect(out.count).toBeUndefined();
+      expect(out.unitGrams).toBeUndefined();
+      expect(out.quantityG).toBe(60);
+    });
+  });
+
+  test("lifts a bare single-food reply into a one-item meal", async () => {
+    reply({
+      name: "banana",
+      proteinG: 1.1,
+      carbsG: 23,
+      fatG: 0.3,
+      servings: [{ name: "as photographed", grams: 118 }],
+    });
+    const out = await estimateFoodFromPhoto("AAAA", "image/jpeg");
+    expect(out.items).toHaveLength(1);
+    expect(out.items[0]).toMatchObject({ name: "banana", quantityG: 118 });
+  });
+
+  test("retries once, then reports what didn't validate", async () => {
+    const calls = stubFetch({ choices: [{ message: { content: "sorry, I can't tell" } }] });
+    await expect(estimateFoodFromPhoto("AAAA", "image/jpeg")).rejects.toThrow(
+      /didn't match the expected format/,
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.init.body as string).toContain("could not be parsed");
   });
 });

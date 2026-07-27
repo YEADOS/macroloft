@@ -14,11 +14,12 @@ import {
   useMeals,
   useRecentFoods,
   type Food,
-  type FoodEstimate,
+  type MealEstimate,
 } from "../lib/api";
 import { downscaleImage } from "../lib/image";
 import { kcal, g } from "../lib/format";
 import BarcodeScanner from "./BarcodeScanner";
+import PhotoReview from "./PhotoReview";
 
 type Tab = "search" | "quick" | "photo" | "meals" | "new";
 
@@ -306,10 +307,13 @@ export default function AddSheet({
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Photo estimation → prefilled New Food form. aiNote drives the "AI estimate"
-  // banner on the New Food tab (null = no banner).
+  // Photo estimation → itemised review list on the same tab. A non-null
+  // estimate replaces the capture zone with PhotoReview.
   const [photoBusy, setPhotoBusy] = useState(false);
-  const [aiNote, setAiNote] = useState<string | null>(null);
+  const [estimate, setEstimate] = useState<MealEstimate | null>(null);
+  // Optional user hint sent with the photo — ingredients the camera can't see
+  // (honey on the rice cakes), cooking method, or portion.
+  const [photoHint, setPhotoHint] = useState("");
   const search = useFoodSearch(q);
   const recent = useRecentFoods();
   const meals = useMeals();
@@ -360,39 +364,13 @@ export default function AddSheet({
     }
   };
 
-  // Map a photo estimate onto the New Food form. The model returns per-100g
-  // macros plus the plate's weight; we prefill in "serving" basis so the form
-  // shows the photographed portion and its totals, and "Create & log 1 serving"
-  // logs exactly that — no new save path, the form is the override UI.
-  const applyEstimate = (est: FoodEstimate) => {
-    const grams = est.food.servings?.[0]?.grams ?? 100;
-    const perServing = (v?: number) =>
-      v == null ? "" : String(Math.round(((v * grams) / 100) * 10) / 10);
-    setNf({
-      name: est.food.name ?? "",
-      brand: est.food.brand ?? "",
-      protein: perServing(est.food.proteinG),
-      carbs: perServing(est.food.carbsG),
-      fat: perServing(est.food.fatG),
-      kcal: est.food.energyKcal != null ? perServing(est.food.energyKcal) : "",
-      satfat: perServing(est.food.satFatG),
-      sugars: perServing(est.food.sugarsG),
-      fibre: perServing(est.food.fibreG),
-      sodium: perServing(est.food.sodiumMg),
-      basis: "serving",
-      servingG: String(grams),
-      itemsPer: "",
-    });
-    setAiNote(est.note ?? "");
-    setTab("new");
-  };
-
   const estimateFromFile = async (file: File) => {
     setPhotoBusy(true);
     setError(null);
     try {
       const { base64, mimeType } = await downscaleImage(file);
-      applyEstimate(await apiEstimatePhoto(base64, mimeType));
+      setEstimate(await apiEstimatePhoto(base64, mimeType, photoHint.trim()));
+      setPhotoHint("");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -436,7 +414,7 @@ export default function AddSheet({
           ).map(([t, label]) => (
             <button
               key={t}
-              onClick={() => { setTab(t); setPicked(null); setPrefillG(null); setError(null); setAiNote(null); }}
+              onClick={() => { setTab(t); setPicked(null); setPrefillG(null); setError(null); }}
               className={`plaque whitespace-nowrap border-b-2 px-3 py-2.5 ${
                 tab === t ? "border-[var(--accent)] !text-ink" : "border-transparent"
               }`}
@@ -578,8 +556,32 @@ export default function AddSheet({
                   Open Settings ›
                 </button>
               </div>
+            ) : estimate ? (
+              <PhotoReview
+                estimate={estimate}
+                slot={slot}
+                date={date}
+                onDone={onDone}
+                onDiscard={() => setEstimate(null)}
+              />
             ) : (
               <>
+                <label className="mb-3 flex flex-col gap-1">
+                  <span className="plaque">Description (optional)</span>
+                  <textarea
+                    value={photoHint}
+                    onChange={(e) => setPhotoHint(e.target.value)}
+                    disabled={photoBusy}
+                    rows={2}
+                    maxLength={500}
+                    placeholder="rice cakes with a drizzle of honey"
+                    className="resize-none"
+                  />
+                  <span className="font-mono text-[11px] text-muted">
+                    Anything the camera can't show — hidden ingredients, oil or butter
+                    used, or how much of it you ate.
+                  </span>
+                </label>
                 <label
                   className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed rule py-12 text-center ${
                     photoBusy ? "opacity-60" : "cursor-pointer active:bg-raised md:hover:bg-raised"
@@ -593,7 +595,7 @@ export default function AddSheet({
                     <div className="font-mono text-[11px] text-muted">
                       {photoBusy
                         ? "The model is reading your photo — this can take a few seconds."
-                        : "Take a photo or pick one — you'll confirm the macros before saving."}
+                        : "Take a photo or pick one — you'll confirm every item before it's logged."}
                     </div>
                   </div>
                   <input
@@ -610,8 +612,9 @@ export default function AddSheet({
                   />
                 </label>
                 <p className="mt-3 font-mono text-[11px] text-muted">
-                  Best for whole plates and packaged foods. It's an estimate — always
-                  check the numbers on the next screen.
+                  The meal comes back split into its ingredients, each with its own
+                  weight and macros. It's an estimate — check the counts and numbers
+                  on the next screen.
                 </p>
               </>
             )}
@@ -646,18 +649,6 @@ export default function AddSheet({
 
         {tab === "new" && (
           <div className="mt-4 space-y-3">
-            {aiNote !== null && (
-              <div
-                className="border rule p-3"
-                style={{ borderColor: "var(--accent)", background: "color-mix(in oklab, var(--accent) 8%, transparent)" }}
-              >
-                <div className="plaque" style={{ color: "var(--accent)" }}>
-                  AI estimate
-                </div>
-                <div className="text-sm">Check and edit the numbers before saving.</div>
-                {aiNote && <div className="mt-1 font-mono text-[11px] text-muted">{aiNote}</div>}
-              </div>
-            )}
             <div className="flex items-center gap-3">
               <span className="plaque">Nutrients are</span>
               <div className="inline-flex border rule font-mono text-[11px]">
