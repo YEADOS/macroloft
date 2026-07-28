@@ -6,6 +6,7 @@ import Weight from "./pages/Weight";
 import Goals from "./pages/Goals";
 import Settings from "./pages/Settings";
 import Convert from "./pages/Convert";
+import { PepsiRail } from "./components/PepsiCounter";
 
 const tabs = [
   { to: "/", label: "Diary", num: "01" },
@@ -49,6 +50,7 @@ export default function App() {
             <span className="plaque !text-inherit">{t.label}</span>
           </NavLink>
         ))}
+        <PepsiRail />
         <div className="mt-auto flex flex-col gap-3 px-1">
           <NavLink to="/convert" className="plaque hover:text-ink">
             ⇄ Convert

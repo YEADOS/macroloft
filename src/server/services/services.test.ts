@@ -11,6 +11,7 @@ const mealsSvc = await import("./meals");
 const goalsSvc = await import("./goals");
 const weight = await import("./weight");
 const insights = await import("./insights");
+const pepsi = await import("./pepsi");
 const { kcalFromMacros } = await import("../../shared/nutrition");
 
 beforeAll(() => {
@@ -271,6 +272,29 @@ describe("weight", () => {
     expect(h.entries[0]!.weightKg).toBe(89);
     expect(h.entries[1]!.trendKg).toBeCloseTo(88.5, 1);
     expect(h.changeOverRangeKg).toBeCloseTo(-1, 1);
+  });
+});
+
+describe("pepsi max tally", () => {
+  test("counts per day, sums all-time, floors at zero", () => {
+    pepsi.addPepsi(1, "2026-07-10");
+    pepsi.addPepsi(2, "2026-07-10");
+    const s = pepsi.addPepsi(1, "2026-07-11");
+    expect(s.count).toBe(1);
+    expect(s.total).toBe(4);
+    expect(s.days).toBe(2);
+    expect(s.best).toEqual({ date: "2026-07-10", count: 3 });
+    // two days in a row, ending on the day asked about
+    expect(s.streak).toBe(2);
+
+    // taking one back off an empty day can't go negative, and an emptied day
+    // stops counting as a day with a can
+    const back = pepsi.addPepsi(-1, "2026-07-11");
+    expect(back.count).toBe(0);
+    expect(back.days).toBe(1);
+    expect(back.streak).toBe(0);
+    expect(pepsi.addPepsi(-1, "2026-07-11").count).toBe(0);
+    expect(pepsi.getPepsiStats("2026-07-10").count).toBe(3);
   });
 });
 

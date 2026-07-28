@@ -143,6 +143,14 @@ export const weighIns = sqliteTable(
   (t) => [uniqueIndex("weigh_ins_date").on(t.date)],
 );
 
+// A tally, not food: Pepsi Max is zero-energy, so cans never touch the diary's
+// nutrient math. One row per day that had at least one can.
+export const pepsiDays = sqliteTable("pepsi_days", {
+  date: text("date").primaryKey(), // YYYY-MM-DD local
+  count: integer("count").notNull().default(0),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
@@ -157,3 +165,4 @@ export type DiaryEntry = typeof diaryEntries.$inferSelect;
 export type DiarySlot = typeof diarySlots.$inferSelect;
 export type Goal = typeof goals.$inferSelect;
 export type WeighIn = typeof weighIns.$inferSelect;
+export type PepsiDay = typeof pepsiDays.$inferSelect;

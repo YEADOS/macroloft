@@ -69,6 +69,15 @@ whose rows are still individually editable. Note "new food" (add sheet) is a
 different thing: a custom food you type macros for, not
 a combo of existing ones.
 
+The Pepsi Max counter is a tally, not food: `pepsi_days` holds one row per day
+with a can (`services/pepsi.ts`, `GET|POST /api/pepsi`), zero-energy so it never
+touches diary nutrient math, and an emptied day deletes its row so "days with a
+can" stays honest. `components/PepsiCounter.tsx` has both faces — `PepsiRail`
+under the desktop nav links, `PepsiShelf` (mobile-only) under the diary's day
+gauge, where today's cans line up on a timber rule. Both count against the
+client-local date, like diary entries. The can PNG in `client/public/` is cut
+out of an Open Food Facts product photo (CC BY-SA).
+
 The unit converter (`pages/Convert.tsx`, `/convert`, kJ↔kcal · lb↔kg · in↔mm)
 deliberately has **no mobile tab** — the bottom bar is already full at six — so
 it's reached from the desktop rail's secondary links and a row at the top of

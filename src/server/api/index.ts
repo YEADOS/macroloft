@@ -8,6 +8,7 @@ import * as mealsSvc from "../services/meals";
 import * as goalsSvc from "../services/goals";
 import * as weight from "../services/weight";
 import * as insights from "../services/insights";
+import * as pepsi from "../services/pepsi";
 import * as slots from "../services/slots";
 import * as vision from "../services/vision";
 import { maskedAiConfig, setAiConfig } from "../services/ai/config";
@@ -222,6 +223,20 @@ api.put(
   (c) => {
     const { weightKg, date, note } = c.req.valid("json");
     return c.json(weight.logWeight(weightKg, date, note));
+  },
+);
+
+// --- pepsi max tally ---
+api.get("/pepsi", (c) => {
+  const date = c.req.query("date");
+  return c.json(pepsi.getPepsiStats(date ? dateStr.parse(date) : undefined));
+});
+api.post(
+  "/pepsi",
+  zValidator("json", z.object({ delta: z.number().int().optional(), date: dateStr.optional() })),
+  (c) => {
+    const { delta, date } = c.req.valid("json");
+    return c.json(pepsi.addPepsi(delta ?? 1, date));
   },
 );
 

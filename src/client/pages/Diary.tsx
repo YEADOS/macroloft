@@ -18,6 +18,7 @@ import AddSheet from "../components/AddSheet";
 import Plant from "../components/Plant";
 import { MacroCells, MacroHeader, SlotTotals, type NutrMode } from "../components/MacroTable";
 import MealBuilder, { itemFromEntry, type BuilderItem } from "../components/MealBuilder";
+import { PepsiShelf } from "../components/PepsiCounter";
 
 export type { NutrMode };
 
@@ -566,6 +567,9 @@ export default function Diary() {
       </header>
 
       {day.data && <DayGauge day={day.data} mode={mode} />}
+
+      {/* Desktop keeps its can in the rail; mobile gets the shelf. */}
+      <PepsiShelf date={date} />
 
       {day.data && (
         <div className="mt-5 flex flex-wrap items-center justify-between gap-2">

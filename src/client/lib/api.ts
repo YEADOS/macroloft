@@ -144,6 +144,15 @@ export interface Summary {
   weight: WeightHistory;
 }
 
+export interface PepsiStats {
+  date: string;
+  count: number;
+  total: number;
+  days: number;
+  best: { date: string; count: number } | null;
+  streak: number;
+}
+
 export interface AiConfig {
   enabled: boolean;
   provider: "openai-compatible" | "anthropic";
@@ -235,6 +244,15 @@ export const useSummary = (start: string, end: string) =>
     queryKey: ["summary", start, end],
     queryFn: () => http<Summary>(`/summary?start=${start}&end=${end}`),
   });
+
+export const usePepsi = (date?: string) =>
+  useQuery({
+    queryKey: ["pepsi", date ?? "today"],
+    queryFn: () => http<PepsiStats>(`/pepsi${date ? `?date=${date}` : ""}`),
+  });
+
+export const apiAddPepsi = (delta: number, date?: string) =>
+  http<PepsiStats>("/pepsi", { method: "POST", body: JSON.stringify({ delta, date }) });
 
 export function useInvalidatingMutation<TInput, TOut = unknown>(
   fn: (input: TInput) => Promise<TOut>,
