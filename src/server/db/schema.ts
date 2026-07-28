@@ -3,6 +3,7 @@ import {
   text,
   integer,
   real,
+  blob,
   index,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
@@ -83,6 +84,7 @@ export const diaryEntries = sqliteTable(
     slot: text("slot").notNull(), // references diary_slots.name (validated in services)
     kind: text("kind", { enum: ["food", "quick"] }).notNull(),
     foodId: integer("food_id").references(() => foods.id),
+    // Groups entries logged together — from a saved meal or from one photo scan.
     mealLogId: text("meal_log_id"),
     // Snapshot of the meal's name at log time, so a renamed or deleted meal
     // doesn't rewrite history — the diary group keeps the name you logged.
@@ -100,7 +102,10 @@ export const diaryEntries = sqliteTable(
     sodiumMg: real("sodium_mg"),
     loggedAt: integer("logged_at").notNull(),
   },
-  (t) => [index("diary_entries_date").on(t.date)],
+  (t) => [
+    index("diary_entries_date").on(t.date),
+    index("diary_entries_meal_log_id").on(t.mealLogId),
+  ],
 );
 
 export const diarySlots = sqliteTable(
@@ -151,6 +156,21 @@ export const pepsiDays = sqliteTable("pepsi_days", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+// The photo behind an AI scan, kept so the diary group can show what was
+// estimated. Keyed by the group it belongs to: the photo lives and dies with
+// the entries it produced.
+export const scanPhotos = sqliteTable(
+  "scan_photos",
+  {
+    mealLogId: text("meal_log_id").primaryKey(),
+    date: text("date").notNull(), // YYYY-MM-DD local, matching its entries
+    mimeType: text("mime_type").notNull(),
+    data: blob("data", { mode: "buffer" }).notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("scan_photos_date").on(t.date)],
+);
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
@@ -166,3 +186,4 @@ export type DiarySlot = typeof diarySlots.$inferSelect;
 export type Goal = typeof goals.$inferSelect;
 export type WeighIn = typeof weighIns.$inferSelect;
 export type PepsiDay = typeof pepsiDays.$inferSelect;
+export type ScanPhoto = typeof scanPhotos.$inferSelect;

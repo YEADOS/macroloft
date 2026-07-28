@@ -9,6 +9,7 @@ import * as goalsSvc from "../services/goals";
 import * as weight from "../services/weight";
 import * as insights from "../services/insights";
 import * as pepsi from "../services/pepsi";
+import * as photos from "../services/photos";
 import * as slots from "../services/slots";
 import * as vision from "../services/vision";
 import { maskedAiConfig, setAiConfig } from "../services/ai/config";
@@ -72,6 +73,9 @@ api.post(
       serving: z.object({ name: z.string(), count: z.number().positive().optional() }).optional(),
       slot,
       date: dateStr.optional(),
+      // Log as part of a group (a photo scan's components) — see logFood.
+      mealLogId: z.string().min(1).max(64).optional(),
+      mealName: z.string().min(1).optional(),
     }),
   ),
   (c) => {
@@ -139,6 +143,34 @@ api.delete("/diary/entries/:id", (c) => {
 api.delete("/diary/meal-log/:mealLogId", (c) =>
   c.json({ deleted: diary.deleteMealLog(c.req.param("mealLogId")) }),
 );
+
+// --- scan photos (the picture behind an AI-estimated group) ---
+api.post(
+  "/diary/photos",
+  zValidator(
+    "json",
+    z.object({
+      mealLogId: z.string().min(1).max(64),
+      imageBase64: z.string().min(1),
+      mimeType: z
+        .string()
+        .regex(/^image\/(jpeg|png|webp|gif)$/, "expected image/jpeg, image/png, image/webp or image/gif"),
+      date: dateStr.optional(),
+    }),
+  ),
+  (c) => c.json(photos.saveScanPhoto(c.req.valid("json")), 201),
+);
+api.get("/diary/photos/:mealLogId", (c) => {
+  const photo = photos.getScanPhoto(c.req.param("mealLogId"));
+  if (!photo) return c.json({ error: "no photo for that logged scan" }, 404);
+  return new Response(new Uint8Array(photo.data), {
+    headers: {
+      "content-type": photo.mimeType,
+      // Only ever re-written by a retry mid-review, long before it's viewed.
+      "cache-control": "private, max-age=3600",
+    },
+  });
+});
 
 // --- diary sections (slots) ---
 api.get("/slots", (c) => c.json(slots.listSlots()));

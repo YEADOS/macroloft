@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { kcalFromMacros } from "@shared/nutrition";
-import { apiCreateFood, apiLogFood, type EstimateItem, type MealEstimate } from "../lib/api";
+import {
+  apiCreateFood,
+  apiLogFood,
+  apiSaveScanPhoto,
+  type EstimateItem,
+  type MealEstimate,
+} from "../lib/api";
 import { kcal, g } from "../lib/format";
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -90,15 +96,22 @@ const MACRO_FIELDS = [
  * a row the user can rename, recount, reweigh or drop; pressing log creates one
  * custom food and one diary entry per included row, through the same
  * POST /foods + POST /diary/entries the manual path uses.
+ *
+ * The items go in as one group: they all carry the same `mealLogId`, so the
+ * diary draws the slice of cake as one block instead of four loose rows, and
+ * the photo they came from is filed under the same id.
  */
 export default function PhotoReview({
   estimate,
+  photo,
   slot,
   date,
   onDone,
   onDiscard,
 }: {
   estimate: MealEstimate;
+  /** The (downscaled) photo that was estimated, kept with the logged group. */
+  photo?: { base64: string; mimeType: string };
   slot: string;
   date: string;
   onDone: () => void;
@@ -107,6 +120,12 @@ export default function PhotoReview({
   const [rows, setRows] = useState<Row[]>(() => estimate.items.map(toRow));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True once the entries are in the diary — only ever seen when the photo
+  // upload afterwards failed, so re-logging would double everything up.
+  const [logged, setLogged] = useState(false);
+  // Stable for the life of this review, so a retry after a half-failed log
+  // rejoins the same group and overwrites its photo rather than forking one.
+  const [mealLogId] = useState(() => crypto.randomUUID());
   const qc = useQueryClient();
 
   const patch = (id: number, next: Partial<Row>) =>
@@ -141,6 +160,9 @@ export default function PhotoReview({
     { energyKcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
   );
 
+  /** What the diary block will be called — the dish, not the components. */
+  const groupName = estimate.name?.trim() || "Photo scan";
+
   const logAll = async () => {
     setBusy(true);
     setError(null);
@@ -162,9 +184,19 @@ export default function PhotoReview({
               : { name: "serving", grams: quantityG },
           ],
         });
-        await apiLogFood({ foodId: food.id, quantityG, slot, date });
+        await apiLogFood({ foodId: food.id, quantityG, slot, date, mealLogId, mealName: groupName });
       }
+      setLogged(true);
       for (const k of ["search", "recent", "food"]) qc.invalidateQueries({ queryKey: [k] });
+      // The photo comes last: it's the nice-to-have, and losing it must never
+      // cost the user the log they just confirmed.
+      if (photo)
+        await apiSaveScanPhoto({
+          mealLogId,
+          imageBase64: photo.base64,
+          mimeType: photo.mimeType,
+          date,
+        });
       onDone();
     } catch (e) {
       setError((e as Error).message);
@@ -191,11 +223,15 @@ export default function PhotoReview({
         {estimate.note && (
           <div className="mt-1 font-mono text-[11px] text-muted">{estimate.note}</div>
         )}
+        <div className="mt-1 font-mono text-[11px] text-muted">
+          Logged as one group — {groupName}
+          {photo ? ", with the photo kept" : ""}.
+        </div>
       </div>
 
       {error && (
         <div className="border rule p-3 font-mono text-xs" style={{ color: "var(--accent-2)" }}>
-          {error}
+          {logged ? `Items logged, but the photo wasn't saved: ${error}` : error}
         </div>
       )}
 
@@ -314,22 +350,26 @@ export default function PhotoReview({
       </div>
 
       <button
-        disabled={busy || !canLog}
-        onClick={logAll}
+        disabled={busy || (!logged && !canLog)}
+        onClick={logged ? onDone : logAll}
         className="glow w-full py-2.5 font-display text-sm font-bold uppercase tracking-wider disabled:opacity-40"
         style={{ background: "var(--accent)", color: "#181614" }}
       >
-        {busy
-          ? "Logging…"
-          : `Log ${included.length} item${included.length === 1 ? "" : "s"} to ${slot}`}
+        {logged
+          ? "Done"
+          : busy
+            ? "Logging…"
+            : `Log ${included.length} item${included.length === 1 ? "" : "s"} to ${slot}`}
       </button>
-      <button
-        onClick={onDiscard}
-        disabled={busy}
-        className="w-full border rule py-2.5 font-mono text-xs text-muted active:bg-raised md:hover:text-ink"
-      >
-        Discard & take another photo
-      </button>
+      {!logged && (
+        <button
+          onClick={onDiscard}
+          disabled={busy}
+          className="w-full border rule py-2.5 font-mono text-xs text-muted active:bg-raised md:hover:text-ink"
+        >
+          Discard & take another photo
+        </button>
+      )}
     </div>
   );
 }

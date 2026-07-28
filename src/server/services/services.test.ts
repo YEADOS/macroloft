@@ -12,6 +12,7 @@ const goalsSvc = await import("./goals");
 const weight = await import("./weight");
 const insights = await import("./insights");
 const pepsi = await import("./pepsi");
+const photos = await import("./photos");
 const { kcalFromMacros } = await import("../../shared/nutrition");
 
 beforeAll(() => {
@@ -249,6 +250,88 @@ describe("meals", () => {
     mealsSvc.updateMeal(meal.id, { name: "Post-gym" });
     const logged = diary.getDay("2026-07-04").slots.snacks!.find((e) => e.id === entry!.id);
     expect(logged!.mealName).toBe("Pre-gym");
+  });
+});
+
+describe("photo scans", () => {
+  // A 1x1 JPEG's worth of bytes is enough — the service only stores them.
+  const IMAGE = Buffer.from("hello-photo").toString("base64");
+
+  // What PhotoReview does: one entry per component, all under one group id.
+  const logScan = (mealLogId: string, date: string) => {
+    const whey = foods.searchFoods("whey scoop")[0]!;
+    return [40, 25].map((quantityG) =>
+      diary.logFood({
+        foodId: whey.id,
+        quantityG,
+        slot: "snacks",
+        date,
+        mealLogId,
+        mealName: "Slice of cake",
+      }),
+    );
+  };
+
+  test("items logged with a shared id group like a meal does", () => {
+    const entries = logScan("scan-1", "2026-07-20");
+    expect(entries.every((e) => e.mealLogId === "scan-1")).toBe(true);
+    expect(entries[0]!.mealName).toBe("Slice of cake");
+    const day = diary.getDay("2026-07-20");
+    expect(day.slots.snacks!.every((e) => e.mealLogId === "scan-1")).toBe(true);
+  });
+
+  test("a photo is filed under its group and listed on the day", () => {
+    logScan("scan-2", "2026-07-21");
+    const meta = photos.saveScanPhoto({
+      mealLogId: "scan-2",
+      imageBase64: IMAGE,
+      mimeType: "image/jpeg",
+      date: "2026-07-21",
+    });
+    expect(meta.bytes).toBe(11);
+    expect(photos.getScanPhoto("scan-2")!.mimeType).toBe("image/jpeg");
+    expect(diary.getDay("2026-07-21").photoLogIds).toEqual(["scan-2"]);
+    expect(diary.getDay("2026-07-20").photoLogIds).toEqual([]);
+  });
+
+  test("a data: URL prefix is accepted and oversized photos are refused", () => {
+    photos.saveScanPhoto({
+      mealLogId: "scan-3",
+      imageBase64: `data:image/jpeg;base64,${IMAGE}`,
+      mimeType: "image/jpeg",
+    });
+    expect(photos.getScanPhoto("scan-3")!.data.length).toBe(11);
+    expect(() =>
+      photos.saveScanPhoto({
+        mealLogId: "scan-3",
+        imageBase64: Buffer.alloc(5 * 1024 * 1024).toString("base64"),
+        mimeType: "image/jpeg",
+      }),
+    ).toThrow(/limit is 4 MB/);
+  });
+
+  test("a scan moved to another day takes its photo along", () => {
+    const entries = logScan("scan-6", "2026-07-24");
+    photos.saveScanPhoto({ mealLogId: "scan-6", imageBase64: IMAGE, mimeType: "image/jpeg", date: "2026-07-24" });
+    for (const e of entries) diary.updateEntry(e.id, { date: "2026-07-25" });
+    expect(diary.getDay("2026-07-24").photoLogIds).toEqual([]);
+    expect(diary.getDay("2026-07-25").photoLogIds).toEqual(["scan-6"]);
+  });
+
+  test("deleting the group takes its photo with it", () => {
+    logScan("scan-4", "2026-07-22");
+    photos.saveScanPhoto({ mealLogId: "scan-4", imageBase64: IMAGE, mimeType: "image/jpeg", date: "2026-07-22" });
+    expect(diary.deleteMealLog("scan-4")).toBe(2);
+    expect(photos.getScanPhoto("scan-4")).toBeNull();
+  });
+
+  test("the photo survives until the last entry of its group is gone", () => {
+    const entries = logScan("scan-5", "2026-07-23");
+    photos.saveScanPhoto({ mealLogId: "scan-5", imageBase64: IMAGE, mimeType: "image/jpeg", date: "2026-07-23" });
+    diary.deleteEntry(entries[0]!.id);
+    expect(photos.getScanPhoto("scan-5")).not.toBeNull();
+    diary.deleteEntry(entries[1]!.id);
+    expect(photos.getScanPhoto("scan-5")).toBeNull();
   });
 });
 

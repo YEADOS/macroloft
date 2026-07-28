@@ -29,6 +29,13 @@
       "when": 1785164712390,
       "tag": "0003_mighty_blur",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1785232390795,
+      "tag": "0004_fancy_silver_fox",
+      "breakpoints": true
     }
   ]
 }

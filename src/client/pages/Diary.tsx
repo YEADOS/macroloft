@@ -6,6 +6,7 @@ import {
   apiDeleteMealLog,
   apiDeleteSlot,
   apiUpdateEntry,
+  scanPhotoUrl,
   useDay,
   useFood,
   type DiarySlot,
@@ -285,7 +286,8 @@ function groupEntries(entries: Entry[]): Block[] {
 }
 
 /**
- * The meal wrapper: timber rule + indent, so the rows read as one logged meal.
+ * The meal wrapper: timber rule + indent, so the rows read as one logged meal
+ * — or as the components of one photo scan, which are logged the same way.
  * The right padding pulls the numbers off the tinted edge — meal rows sit a
  * few pixels inside the section's columns on purpose.
  */
@@ -293,17 +295,21 @@ function MealGroup({
   name,
   entries,
   selecting,
+  hasPhoto,
   onDeleted,
   children,
 }: {
   name: string;
   entries: Entry[];
   selecting: boolean;
+  /** A scan group: its photo can be pulled up under the heading. */
+  hasPhoto: boolean;
   onDeleted: () => void;
   children: React.ReactNode;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showPhoto, setShowPhoto] = useState(false);
   const total = entries.reduce((n, e) => n + e.energyKcal, 0);
   const mealLogId = entries[0]?.mealLogId;
   return (
@@ -316,7 +322,7 @@ function MealGroup({
     >
       <div className="flex items-center justify-between gap-2 pt-2">
         <span className="plaque min-w-0 truncate" style={{ color: "var(--timber)" }}>
-          ▤ {name}
+          {hasPhoto ? "☐" : "▤"} {name}
         </span>
         {confirming ? (
           <span className="flex shrink-0 items-center gap-1.5">
@@ -349,6 +355,16 @@ function MealGroup({
             <span className="font-mono text-[11px] text-muted">
               {entries.length} item{entries.length === 1 ? "" : "s"} · {kcal(total)} kcal
             </span>
+            {hasPhoto && (
+              <button
+                onClick={() => setShowPhoto((v) => !v)}
+                aria-expanded={showPhoto}
+                title={showPhoto ? "Hide the photo" : `See the photo logged as ${name}`}
+                className="-my-1 border rule px-2.5 py-2 font-mono text-[11px] text-muted md:hover:text-ink"
+              >
+                {showPhoto ? "▾ photo" : "▸ photo"}
+              </button>
+            )}
             {!selecting && (
               <button
                 onClick={() => setConfirming(true)}
@@ -361,6 +377,23 @@ function MealGroup({
           </span>
         )}
       </div>
+      {showPhoto && mealLogId && (
+        <a
+          href={scanPhotoUrl(mealLogId)}
+          target="_blank"
+          rel="noreferrer"
+          title="Open the full-size photo"
+          className="mt-2 block border rule"
+        >
+          <img
+            src={scanPhotoUrl(mealLogId)}
+            alt={`The photo logged as ${name}`}
+            loading="lazy"
+            className="max-h-72 w-full object-contain"
+            style={{ background: "var(--surface)" }}
+          />
+        </a>
+      )}
       <div className="divide-y divide-[var(--line)]/50">{children}</div>
     </div>
   );
@@ -677,6 +710,7 @@ export default function Diary() {
                         name={block.name}
                         entries={block.entries}
                         selecting={selecting}
+                        hasPhoto={day.data!.photoLogIds.includes(block.key)}
                         onDeleted={refresh}
                       >
                         {block.entries.map(row)}

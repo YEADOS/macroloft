@@ -83,8 +83,8 @@ One row per logged item.
 | slot | text | a `diary_slots.name` (validated in services, not a DB constraint) |
 | kind | text | `'food' \| 'quick'` |
 | food_id | fk, nullable | null for quick entries |
-| meal_log_id | text, nullable | groups entries logged together from a saved meal |
-| meal_name | text, nullable | **snapshot** of the meal's name at log time — labels the diary group |
+| meal_log_id | text, nullable | indexed; groups entries logged together — a saved meal, or the components of one photo scan |
+| meal_name | text, nullable | **snapshot** of the group's name at log time — labels the diary group |
 | quantity_g | real, nullable | null for quick entries |
 | label | text, nullable | quick-entry description ("pub lunch") |
 | energy_kcal | real | **snapshot** at log time |
@@ -95,6 +95,26 @@ One row per logged item.
 Snapshotting means food-DB refreshes and custom-food edits never silently rewrite
 past days. Quick entries: kcal = 4·protein + 4·carbs + 9·fat (Atwater), computed
 server-side; caller may override kcal explicitly (e.g. alcohol).
+
+## scan_photos
+
+The photo behind an AI-estimated group, so the diary can show what was
+estimated. One row per group; it lives and dies with the entries it produced.
+
+| column | type | notes |
+|---|---|---|
+| meal_log_id | text pk | the `diary_entries.meal_log_id` of the scan it belongs to |
+| date | text `YYYY-MM-DD` | indexed; the day it was logged on — provenance only |
+| mime_type | text | `image/jpeg` in practice — the client downscales before upload |
+| data | blob | the image bytes, ~4 MB hard cap |
+| created_at | integer | epoch ms |
+
+Written after its entries are logged (`POST /api/diary/photos`), re-saving the
+same id overwrites. `getDay` returns `photoLogIds` — matched against the group
+ids present in *that day's entries*, not the stored date, so a scan moved to
+another day keeps its photo. `GET /api/diary/photos/:mealLogId` serves the bytes.
+Deleting the group — or the last surviving entry in it — deletes the photo, and
+rows left orphaned by an abandoned scan are swept after a day.
 
 ## diary_slots
 

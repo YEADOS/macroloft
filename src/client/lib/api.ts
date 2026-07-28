@@ -43,9 +43,9 @@ export interface Entry {
   slot: Slot;
   kind: "food" | "quick";
   foodId: number | null;
-  /** Set on every entry logged from one saved meal — the grouping key. */
+  /** Set on every entry logged together — one saved meal, or one photo scan. */
   mealLogId: string | null;
-  /** The meal's name as it was when logged. */
+  /** The group's name as it was when logged. */
   mealName: string | null;
   quantityG: number | null;
   label: string | null;
@@ -94,6 +94,8 @@ export interface Day {
   date: string;
   slotList: DiarySlot[];
   slots: Record<Slot, Entry[]>;
+  /** mealLogIds on this day whose scan photo can be shown. */
+  photoLogIds: string[];
   totals: Totals;
   slotTotals: Record<Slot, Totals>;
   goals: Goals | null;
@@ -271,6 +273,9 @@ export const apiLogFood = (input: {
   serving?: { name: string; count?: number };
   slot: Slot;
   date?: string;
+  /** Draws this entry inside a group with everything sharing the id. */
+  mealLogId?: string;
+  mealName?: string;
 }) => http<{ entry: Entry; day: Day }>("/diary/entries", { method: "POST", body: JSON.stringify(input) });
 
 export const apiLogQuick = (input: {
@@ -292,9 +297,24 @@ export const apiUpdateEntry = (id: number, patch: object) =>
 export const apiDeleteEntry = (id: number) =>
   http<void>(`/diary/entries/${id}`, { method: "DELETE" });
 
-/** Removes every entry logged together from one saved meal. */
+/** Removes every entry logged together from one meal or scan, photo included. */
 export const apiDeleteMealLog = (mealLogId: string) =>
   http<{ deleted: number }>(`/diary/meal-log/${mealLogId}`, { method: "DELETE" });
+
+/** Keeps the photo behind a scan, filed under the group its items were logged as. */
+export const apiSaveScanPhoto = (input: {
+  mealLogId: string;
+  imageBase64: string;
+  mimeType: string;
+  date?: string;
+}) =>
+  http<{ mealLogId: string; date: string; mimeType: string; bytes: number; createdAt: number }>(
+    "/diary/photos",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+
+/** Src for a saved scan photo — served as image bytes, not JSON. */
+export const scanPhotoUrl = (mealLogId: string) => `/api/diary/photos/${mealLogId}`;
 
 export const apiCreateFood = (input: object) =>
   http<Food>("/foods", { method: "POST", body: JSON.stringify(input) });

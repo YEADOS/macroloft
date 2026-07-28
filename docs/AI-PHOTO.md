@@ -219,6 +219,23 @@ manual flow uses, so each ingredient lands as its own editable diary row. The
 food's serving is the *piece*, not the plate (`{name: "wrap", grams: 60}`), so
 re-logging one wrap later is a single tap.
 
+**One scan is one group.** The review screen mints a `mealLogId` on mount and
+sends it (with `mealName` = the draft's `name`, else "Photo scan") on every
+entry, so the components read as one indented block in the diary — the same
+`MealGroup` a saved meal gets — instead of four unrelated rows. The id is stable
+across a retry, so a half-failed log rejoins its group rather than forking one.
+
+### Keeping the photo
+
+`POST /api/diary/photos {mealLogId, imageBase64, mimeType, date?}` stores the
+already-downscaled bytes in `scan_photos`, keyed by the group. It runs **after**
+the entries are logged: the photo is the nice-to-have, and a failed upload must
+never cost the user the log they just confirmed (the screen then says so and
+offers *Done* rather than re-logging). In the diary, groups listed in the day's
+`photoLogIds` get a **▸ photo** toggle in the header that reveals the image
+inline; tapping it opens `GET /api/diary/photos/:mealLogId` full size. Deleting
+the group takes the photo with it — see `docs/DATA-MODEL.md`.
+
 **Config UI:** small "AI" section — either on the Goals page or a new
 lightweight Settings page — with provider dropdown, base URL, model, key
 (masked), a "Test connection" button hitting `/ai/test`, and an enable toggle.

@@ -105,13 +105,24 @@ export function buildMcpServer(): McpServer {
     "log_food",
     {
       description:
-        "Log a food to the diary. Give quantityG in grams, or a serving name from the food's servings (with optional count). Returns the entry plus fresh day totals/remaining so you can confirm without another call.",
+        "Log a food to the diary. Give quantityG in grams, or a serving name from the food's servings (with optional count). Returns the entry plus fresh day totals/remaining so you can confirm without another call. When you log several foods that belong to one dish — the components of a photo estimate, or a plate you're logging piece by piece — pass the same mealLogId and mealName on each call so the diary shows them as one block instead of loose rows.",
       inputSchema: {
         foodId: z.number().int(),
         quantityG: z.number().positive().optional(),
         serving: z.object({ name: z.string(), count: z.number().positive().optional() }).optional(),
         slot,
         date: dateStr.optional(),
+        mealLogId: z
+          .string()
+          .min(1)
+          .max(64)
+          .optional()
+          .describe("Group key shared by every entry of one dish — invent one id (e.g. a uuid) per dish and reuse it across the calls."),
+        mealName: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Label for that group, e.g. 'Slice of carrot cake'. Snapshotted at log time."),
       },
     },
     (input) => {
@@ -311,7 +322,7 @@ export function buildMcpServer(): McpServer {
     "estimate_food_from_photo",
     {
       description:
-        "Break a photographed meal into its component foods and estimate each one. Returns an UNSAVED draft { name?, items[], note? } — nothing is saved until you act on it. Each item is one ingredient (chicken breast, avocado, the wrap, the mayo) with macros PER 100 G plus `quantityG`, the TOTAL grams of that component in the photo. Countable items also carry `count`, `unit` and `unitGrams` (e.g. count 2, unit 'wrap', unitGrams 60, quantityG 120) — always tell the user the count so they can see whether both halves / both wraps were included before confirming. To log a confirmed item: create_food with its name/brand/per-100g macros (a good serving is { name: unit, grams: unitGrams }), then log_food with quantityG. Requires AI estimation to be enabled in Settings. image_base64 is the base64 of a JPEG/PNG/WebP (a data: URL prefix is fine). Pass `description` whenever the user mentions anything the camera can't show — hidden ingredients ('with honey on top'), cooking method ('fried in butter'), or how much of it they ate — it materially improves the estimate.",
+        "Break a photographed meal into its component foods and estimate each one. Returns an UNSAVED draft { name?, items[], note? } — nothing is saved until you act on it. Each item is one ingredient (chicken breast, avocado, the wrap, the mayo) with macros PER 100 G plus `quantityG`, the TOTAL grams of that component in the photo. Countable items also carry `count`, `unit` and `unitGrams` (e.g. count 2, unit 'wrap', unitGrams 60, quantityG 120) — always tell the user the count so they can see whether both halves / both wraps were included before confirming. To log a confirmed item: create_food with its name/brand/per-100g macros (a good serving is { name: unit, grams: unitGrams }), then log_food with quantityG — pass the same mealLogId (any id you invent) and mealName (the draft's `name`) on every item of the photo so the diary groups them as one dish. Requires AI estimation to be enabled in Settings. image_base64 is the base64 of a JPEG/PNG/WebP (a data: URL prefix is fine). Pass `description` whenever the user mentions anything the camera can't show — hidden ingredients ('with honey on top'), cooking method ('fried in butter'), or how much of it they ate — it materially improves the estimate.",
       inputSchema: {
         image_base64: z.string(),
         mime_type: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),

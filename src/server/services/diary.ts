@@ -5,6 +5,7 @@ import { kcalFromMacros, per100, round1, type Slot } from "../../shared/nutritio
 import { bumpUsage, getFood } from "./foods";
 import { getGoals } from "./goals";
 import { listSlots, validateSlot } from "./slots";
+import { deleteScanPhoto, photosAmong } from "./photos";
 import { today } from "./settings";
 
 export interface LogFoodInput {
@@ -13,6 +14,13 @@ export interface LogFoodInput {
   serving?: { name: string; count?: number };
   slot: Slot;
   date?: string;
+  /**
+   * Log this entry as part of a group — a saved meal, or the several components
+   * of one photo scan. Every entry sharing the id draws as one block in the
+   * diary; `mealName` is the label, snapshotted here so it never changes later.
+   */
+  mealLogId?: string;
+  mealName?: string;
 }
 
 function resolveQuantity(input: LogFoodInput, servings: { name: string; grams: number }[]): number {
@@ -43,6 +51,8 @@ export function logFood(input: LogFoodInput): DiaryEntry {
       slot: validateSlot(input.slot),
       kind: "food",
       foodId: food.id,
+      mealLogId: input.mealLogId ?? null,
+      mealName: input.mealLogId ? (input.mealName ?? null) : null,
       quantityG,
       energyKcal: per100(food.energyKcal, quantityG),
       proteinG: per100(food.proteinG, quantityG),
@@ -102,21 +112,16 @@ export function logMeal(
   const items = db.select().from(mealItems).where(eq(mealItems.mealId, mealId)).all();
   if (items.length === 0) throw new Error(`meal "${meal.name}" has no items`);
   const mealLogId = crypto.randomUUID();
-  const entries: DiaryEntry[] = [];
-  for (const item of items) {
-    const entry = logFood({
+  return items.map((item) =>
+    logFood({
       foodId: item.foodId,
       quantityG: round1(item.quantityG * scale),
       slot,
       date,
-    });
-    db.update(diaryEntries)
-      .set({ mealLogId, mealName: meal.name })
-      .where(eq(diaryEntries.id, entry.id))
-      .run();
-    entries.push({ ...entry, mealLogId, mealName: meal.name });
-  }
-  return entries;
+      mealLogId,
+      mealName: meal.name,
+    }),
+  );
 }
 
 export interface UpdateEntryInput {
@@ -161,11 +166,25 @@ export function deleteEntry(id: number) {
   const existing = db.select().from(diaryEntries).where(eq(diaryEntries.id, id)).get();
   if (!existing) throw new Error(`no diary entry with id ${id}`);
   db.delete(diaryEntries).where(eq(diaryEntries.id, id)).run();
+  // Picking a group apart row by row ends the same way as deleting it whole:
+  // once the last entry is gone there's nothing for its photo to belong to.
+  if (existing.mealLogId && isMealLogEmpty(existing.mealLogId))
+    deleteScanPhoto(existing.mealLogId);
+}
+
+function isMealLogEmpty(mealLogId: string): boolean {
+  return !db
+    .select({ id: diaryEntries.id })
+    .from(diaryEntries)
+    .where(eq(diaryEntries.mealLogId, mealLogId))
+    .limit(1)
+    .get();
 }
 
 /**
- * Remove every entry logged together from one saved meal, in one go — the diary
- * shows them as a unit, so they come out as a unit. Returns how many went.
+ * Remove every entry logged together — a saved meal or one photo scan — in one
+ * go. The diary shows them as a unit, so they come out as a unit, photo and
+ * all. Returns how many went.
  */
 export function deleteMealLog(mealLogId: string): number {
   const rows = db
@@ -176,6 +195,7 @@ export function deleteMealLog(mealLogId: string): number {
   if (rows.length === 0)
     throw new Error(`no logged meal with mealLogId ${mealLogId}; get the day first`);
   db.delete(diaryEntries).where(eq(diaryEntries.mealLogId, mealLogId)).run();
+  deleteScanPhoto(mealLogId);
   return rows.length;
 }
 
@@ -214,6 +234,8 @@ export interface DaySummary {
   /** Sections to render, in order: permanent slots plus any one-off slot used that day. */
   slotList: { id: number; name: string; permanent: boolean }[];
   slots: Record<Slot, EntryWithFood[]>;
+  /** mealLogIds on this day that have a saved scan photo to show. */
+  photoLogIds: string[];
   totals: DayTotals;
   slotTotals: Record<Slot, DayTotals>;
   goals: Goal | null;
@@ -267,6 +289,9 @@ export function getDay(date?: string): DaySummary {
     date: d,
     slotList,
     slots,
+    photoLogIds: photosAmong([
+      ...new Set(entries.flatMap((e) => (e.mealLogId ? [e.mealLogId] : []))),
+    ]),
     totals,
     slotTotals,
     goals: g,

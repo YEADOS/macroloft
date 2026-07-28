@@ -65,7 +65,9 @@ returns each item's per-100g macros so the editor can re-scale lines locally. It
 per-ingredient and total macros read the same as a diary section. A logged meal
 stays visible as a unit in the diary: entries are grouped by `meal_log_id` and
 labelled with the `meal_name` snapshot, drawn as an indented timber-ruled block
-whose rows are still individually editable. Note "new food" (add sheet) is a
+whose rows are still individually editable. `meal_log_id` is the general
+"logged together" key, not a meals-only field — `logFood` takes it, so a photo
+scan groups through the same `MealGroup` block (see below). Note "new food" (add sheet) is a
 different thing: a custom food you type macros for, not
 a combo of existing ones.
 
@@ -92,6 +94,17 @@ three are present with `count * unitGrams === quantityG`, or none are, which is
 what lets the UI say "AI counted 2 × wrap at 60 g each" instead of leaving you
 to guess whether to hit ×2. `PhotoReview.tsx` is the confirm screen; logging
 loops `POST /foods` + `POST /diary/entries` per item — no new save path.
+
+One scan lands as **one group**: PhotoReview mints a `mealLogId` and sends it
+with every item (`mealName` = the estimate's name, or "Photo scan"), so the four
+components of a slice of cake read as one block in the diary instead of four
+loose rows. The photo itself is kept — `scan_photos` holds one row per group
+(`services/photos.ts`, `POST /api/diary/photos`, `GET /api/diary/photos/:mealLogId`
+serving raw image bytes), written after the entries land so a failed upload never
+costs you the log. `getDay` returns `photoLogIds` so `MealGroup` can offer a
+▸ photo toggle; deleting the group — or its last remaining row — deletes the
+photo, and orphans from an abandoned scan are swept after a day. Photos are
+stored as the client already downscaled them (1024 px JPEG, ~4 MB hard cap).
 
 The service lives in `src/server/services/vision.ts` +
 `src/server/services/ai/` (pluggable `openai-compatible`/`anthropic` adapters,

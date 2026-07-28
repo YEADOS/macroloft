@@ -316,6 +316,9 @@ export default function AddSheet({
   // estimate replaces the capture zone with PhotoReview.
   const [photoBusy, setPhotoBusy] = useState(false);
   const [estimate, setEstimate] = useState<MealEstimate | null>(null);
+  // The photo that produced `estimate`, held so it can be saved with the group
+  // once the user confirms — the downscaled bytes, not the original file.
+  const [photo, setPhoto] = useState<{ base64: string; mimeType: string } | null>(null);
   // Optional user hint sent with the photo — ingredients the camera can't see
   // (honey on the rice cakes), cooking method, or portion.
   const [photoHint, setPhotoHint] = useState("");
@@ -376,6 +379,7 @@ export default function AddSheet({
     try {
       const { base64, mimeType } = await downscaleImage(file);
       setEstimate(await apiEstimatePhoto(base64, mimeType, photoHint.trim()));
+      setPhoto({ base64, mimeType });
       setPhotoHint("");
     } catch (e) {
       setError((e as Error).message);
@@ -572,10 +576,14 @@ export default function AddSheet({
             ) : estimate ? (
               <PhotoReview
                 estimate={estimate}
+                photo={photo ?? undefined}
                 slot={slot}
                 date={date}
                 onDone={onDone}
-                onDiscard={() => setEstimate(null)}
+                onDiscard={() => {
+                  setEstimate(null);
+                  setPhoto(null);
+                }}
               />
             ) : (
               <>
