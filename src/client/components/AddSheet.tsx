@@ -622,7 +622,6 @@ export default function AddSheet({
                   <input
                     type="file"
                     accept="image/*"
-                    capture="environment"
                     disabled={photoBusy}
                     className="hidden"
                     onChange={(e) => {
