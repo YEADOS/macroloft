@@ -51,6 +51,10 @@ export interface Entry {
   label: string | null;
   foodName: string | null;
   brand: string | null;
+  /** Epoch ms the entry was logged at. */
+  loggedAt: number;
+  /** `loggedAt` as local wall-clock "HH:MM" — used by the timeline view. */
+  time: string;
   energyKcal: number;
   proteinG: number;
   carbsG: number;
@@ -276,6 +280,8 @@ export const apiLogFood = (input: {
   /** Draws this entry inside a group with everything sharing the id. */
   mealLogId?: string;
   mealName?: string;
+  /** Local "HH:MM" to stamp the entry at; omit for right now. */
+  time?: string;
 }) => http<{ entry: Entry; day: Day }>("/diary/entries", { method: "POST", body: JSON.stringify(input) });
 
 export const apiLogQuick = (input: {
@@ -286,6 +292,8 @@ export const apiLogQuick = (input: {
   label?: string;
   slot: Slot;
   date?: string;
+  /** Local "HH:MM" to stamp the entry at; omit for right now. */
+  time?: string;
 }) => http<{ entry: Entry; day: Day }>("/diary/quick", { method: "POST", body: JSON.stringify(input) });
 
 export const apiLogMeal = (input: { mealId: number; slot: Slot; date?: string; scale?: number }) =>

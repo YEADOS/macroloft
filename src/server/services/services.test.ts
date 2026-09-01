@@ -13,6 +13,7 @@ const weight = await import("./weight");
 const insights = await import("./insights");
 const pepsi = await import("./pepsi");
 const photos = await import("./photos");
+const settings = await import("./settings");
 const { kcalFromMacros } = await import("../../shared/nutrition");
 
 beforeAll(() => {
@@ -389,5 +390,44 @@ describe("insights", () => {
     const split = s.macroSplit!;
     expect(split.proteinPct + split.carbsPct + split.fatPct).toBeGreaterThanOrEqual(99);
     expect(s.targets!.energyKcal).toBe(2000); // targets active at range end
+  });
+});
+
+describe("entry times (timeline feature)", () => {
+  test("local time <-> epoch round-trips in the configured timezone", () => {
+    // Default tz is Australia/Sydney. A wall-clock time resolves to an epoch
+    // that reads back as the same "HH:MM".
+    const epoch = settings.epochForLocalTime("2026-07-05", "13:37");
+    expect(settings.localTimeOfDay(epoch)).toBe("13:37");
+  });
+
+  test("logFood honours an explicit time; getDay exposes it", () => {
+    const f = foods.createCustomFood({ name: "Timed Snack", proteinG: 5, carbsG: 10, fatG: 2 });
+    const e = diary.logFood({
+      foodId: f.id,
+      quantityG: 100,
+      slot: "lunch",
+      date: "2026-08-01",
+      time: "09:15",
+    });
+    expect(settings.localTimeOfDay(e.loggedAt)).toBe("09:15");
+    const day = diary.getDay("2026-08-01");
+    const row = day.slots["lunch"]!.find((x) => x.id === e.id)!;
+    expect(row.time).toBe("09:15");
+  });
+
+  test("logFood without a time stamps roughly now", () => {
+    const f = foods.searchFoods("timed snack")[0]!;
+    const before = Date.now();
+    const e = diary.logFood({ foodId: f.id, quantityG: 50, slot: "dinner", date: "2026-08-02" });
+    expect(e.loggedAt).toBeGreaterThanOrEqual(before);
+    expect(e.loggedAt).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  test("updateEntry can re-time an existing entry", () => {
+    const f = foods.searchFoods("timed snack")[0]!;
+    const e = diary.logFood({ foodId: f.id, quantityG: 30, slot: "lunch", date: "2026-08-03", time: "12:00" });
+    const updated = diary.updateEntry(e.id, { time: "18:45" });
+    expect(settings.localTimeOfDay(updated.loggedAt)).toBe("18:45");
   });
 });

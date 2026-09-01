@@ -302,6 +302,8 @@ export default function AddSheet({
   onClose: () => void;
 }) {
   const [slot, setSlot] = useState(initialSlot);
+  // Optional log time (local "HH:MM"); empty means "now", stamped server-side.
+  const [time, setTime] = useState("");
   const [tab, setTab] = useState<Tab>("search");
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Food | null>(null);
@@ -454,6 +456,26 @@ export default function AddSheet({
           <button onClick={onClose} className="plaque -mr-2 px-2 py-3 hover:text-ink">✕ Close</button>
         </div>
 
+        <div className="mt-2 flex items-center gap-2 font-mono text-xs text-muted">
+          <span className="plaque">Time</span>
+          <input
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            className="!py-1.5"
+          />
+          {time ? (
+            <button
+              onClick={() => setTime("")}
+              className="px-2 py-2 active:text-ink md:hover:text-ink"
+            >
+              ✕ now
+            </button>
+          ) : (
+            <span>defaults to now</span>
+          )}
+        </div>
+
         <div className="mt-2 flex gap-1 overflow-x-auto border-b rule">
           {(
             [
@@ -514,7 +536,7 @@ export default function AddSheet({
                 busy={busy}
                 initialGrams={prefillG ?? undefined}
                 onBack={() => { setPicked(null); setPrefillG(null); }}
-                onLog={(opts) => run(() => apiLogFood({ foodId: picked.id, ...opts, slot, date }))}
+                onLog={(opts) => run(() => apiLogFood({ foodId: picked.id, ...opts, slot, date, time: time || undefined }))}
               />
             ) : q.trim().length >= 2 ? (
               <div className="mt-2">
@@ -588,6 +610,7 @@ export default function AddSheet({
                     label: qlabel || undefined,
                     slot,
                     date,
+                    time: time || undefined,
                   }),
                 )
               }
@@ -927,6 +950,7 @@ export default function AddSheet({
                     quantityG: perServing ? servingG : 100,
                     slot,
                     date,
+                    time: time || undefined,
                   });
                 })
               }

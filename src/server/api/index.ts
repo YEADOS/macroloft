@@ -21,6 +21,8 @@ api.onError((err, c) => c.json({ error: err.message }, 400));
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 // Validated against the diary_slots table in services, not an enum.
 const slot = z.string().min(1);
+// Local wall-clock "HH:MM"; the service resolves it against the entry's date.
+const timeStr = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "expected HH:MM (24-hour)");
 
 // The food shape lives in the foods service so REST, MCP, and AI vision all
 // validate through one schema.
@@ -76,6 +78,7 @@ api.post(
       // Log as part of a group (a photo scan's components) — see logFood.
       mealLogId: z.string().min(1).max(64).optional(),
       mealName: z.string().min(1).optional(),
+      time: timeStr.optional(),
     }),
   ),
   (c) => {
@@ -95,6 +98,7 @@ api.post(
       label: z.string().optional(),
       slot,
       date: dateStr.optional(),
+      time: timeStr.optional(),
     }),
   ),
   (c) => {
@@ -128,6 +132,7 @@ api.patch(
       slot: slot.optional(),
       date: dateStr.optional(),
       label: z.string().optional(),
+      time: timeStr.optional(),
     }),
   ),
   (c) => {

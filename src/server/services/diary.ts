@@ -6,7 +6,7 @@ import { bumpUsage, getFood } from "./foods";
 import { getGoals } from "./goals";
 import { listSlots, validateSlot } from "./slots";
 import { deleteScanPhoto, photosAmong } from "./photos";
-import { today } from "./settings";
+import { epochForLocalTime, localTimeOfDay, today } from "./settings";
 
 export interface LogFoodInput {
   foodId: number;
@@ -21,6 +21,8 @@ export interface LogFoodInput {
    */
   mealLogId?: string;
   mealName?: string;
+  /** Local wall-clock "HH:MM" to stamp the entry at; defaults to right now. */
+  time?: string;
 }
 
 function resolveQuantity(input: LogFoodInput, servings: { name: string; grams: number }[]): number {
@@ -44,10 +46,11 @@ export function logFood(input: LogFoodInput): DiaryEntry {
   const food = getFood(input.foodId);
   if (!food) throw new Error(`no food with id ${input.foodId}; use search_foods first`);
   const quantityG = resolveQuantity(input, food.servings);
+  const date = input.date ?? today();
   const entry = db
     .insert(diaryEntries)
     .values({
-      date: input.date ?? today(),
+      date,
       slot: validateSlot(input.slot),
       kind: "food",
       foodId: food.id,
@@ -62,7 +65,7 @@ export function logFood(input: LogFoodInput): DiaryEntry {
       sugarsG: per100(food.sugarsG, quantityG),
       fibreG: per100(food.fibreG, quantityG),
       sodiumMg: per100(food.sodiumMg, quantityG),
-      loggedAt: Date.now(),
+      loggedAt: input.time ? epochForLocalTime(date, input.time) : Date.now(),
     })
     .returning()
     .get();
@@ -78,13 +81,16 @@ export interface LogQuickInput {
   label?: string;
   slot: Slot;
   date?: string;
+  /** Local wall-clock "HH:MM" to stamp the entry at; defaults to right now. */
+  time?: string;
 }
 
 export function logQuick(input: LogQuickInput): DiaryEntry {
+  const date = input.date ?? today();
   return db
     .insert(diaryEntries)
     .values({
-      date: input.date ?? today(),
+      date,
       slot: validateSlot(input.slot),
       kind: "quick",
       label: input.label ?? null,
@@ -94,7 +100,7 @@ export function logQuick(input: LogQuickInput): DiaryEntry {
       proteinG: input.proteinG,
       carbsG: input.carbsG,
       fatG: input.fatG,
-      loggedAt: Date.now(),
+      loggedAt: input.time ? epochForLocalTime(date, input.time) : Date.now(),
     })
     .returning()
     .get();
@@ -129,6 +135,8 @@ export interface UpdateEntryInput {
   slot?: Slot;
   date?: string;
   label?: string;
+  /** New local wall-clock "HH:MM" for the entry, on its (possibly new) date. */
+  time?: string;
 }
 
 export function updateEntry(id: number, patch: UpdateEntryInput): DiaryEntry {
@@ -138,6 +146,7 @@ export function updateEntry(id: number, patch: UpdateEntryInput): DiaryEntry {
   if (patch.slot) set.slot = validateSlot(patch.slot);
   if (patch.date) set.date = patch.date;
   if (patch.label !== undefined) set.label = patch.label;
+  if (patch.time) set.loggedAt = epochForLocalTime(patch.date ?? entry.date, patch.time);
   if (patch.quantityG != null) {
     if (entry.kind !== "food" || entry.quantityG == null || entry.foodId == null)
       throw new Error("quantity only applies to food entries");
@@ -214,18 +223,21 @@ export interface DayTotals {
 export interface EntryWithFood extends DiaryEntry {
   foodName: string | null;
   brand: string | null;
+  /** `loggedAt` as local wall-clock "HH:MM" — the timeline view positions by it. */
+  time: string;
 }
 
 function withFoodNames(entries: DiaryEntry[]): EntryWithFood[] {
   const cache = new Map<number, { name: string; brand: string | null } | null>();
   return entries.map((e) => {
-    if (e.foodId == null) return { ...e, foodName: null, brand: null };
+    const time = localTimeOfDay(e.loggedAt);
+    if (e.foodId == null) return { ...e, foodName: null, brand: null, time };
     if (!cache.has(e.foodId)) {
       const f = getFood(e.foodId);
       cache.set(e.foodId, f ? { name: f.name, brand: f.brand } : null);
     }
     const f = cache.get(e.foodId);
-    return { ...e, foodName: f?.name ?? null, brand: f?.brand ?? null };
+    return { ...e, foodName: f?.name ?? null, brand: f?.brand ?? null, time };
   });
 }
 

@@ -20,6 +20,9 @@ import Plant from "../components/Plant";
 import { MacroCells, MacroHeader, SlotTotals, type NutrMode } from "../components/MacroTable";
 import MealBuilder, { itemFromEntry, type BuilderItem } from "../components/MealBuilder";
 import { PepsiShelf } from "../components/PepsiCounter";
+import DiaryTimeline from "../components/DiaryTimeline";
+
+type DiaryView = "list" | "timeline";
 
 export type { NutrMode };
 
@@ -126,6 +129,17 @@ function EntryEditor({
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="plaque">Time</span>
+          <input
+            type="time"
+            defaultValue={entry.time}
+            disabled={busy}
+            onChange={(e) => e.target.value && act(() => apiUpdateEntry(entry.id, { time: e.target.value }))}
+            className="text-sm"
+          />
         </label>
 
         <div className="ml-auto flex gap-1.5">
@@ -477,6 +491,11 @@ export default function Diary() {
   const [mode, setMode] = useState<NutrMode>(
     () => (localStorage.getItem("nutrMode") as NutrMode) ?? "macros",
   );
+  const [view, setView] = useState<DiaryView>(
+    () => (localStorage.getItem("diaryView") as DiaryView) ?? "list",
+  );
+  // Entry opened from the timeline (list view edits inline within each row).
+  const [editing, setEditing] = useState<Entry | null>(null);
   // One-off sections created this session: keep each visible (while empty) only
   // on the day it was created for — that's the whole point of non-permanent.
   const [ephemeral, setEphemeral] = useState<{ slot: DiarySlot; forDate: string }[]>([]);
@@ -497,6 +516,16 @@ export default function Diary() {
   const setModePersist = (m: NutrMode) => {
     setMode(m);
     localStorage.setItem("nutrMode", m);
+  };
+  const setViewPersist = (v: DiaryView) => {
+    setView(v);
+    localStorage.setItem("diaryView", v);
+    // Selecting rows to build a meal is a list-view affordance; drop it on switch.
+    if (v === "timeline") {
+      setSelecting(false);
+      setSelected([]);
+      setAnchor(null);
+    }
   };
 
   const slotList: DiarySlot[] = day.data
@@ -606,37 +635,78 @@ export default function Diary() {
 
       {day.data && (
         <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-          <button
-            title="Pick logged foods and save them as a meal — on a desktop, shift-click a row to start"
-            onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
-            className={`border rule px-3 py-1.5 font-mono text-[11px] ${
-              selecting ? "bg-raised text-ink" : "text-muted active:bg-raised md:hover:text-ink"
-            }`}
-          >
-            {selecting ? "✕ Cancel select" : "☑ Select → meal"}
-          </button>
-          <div className="inline-flex border rule font-mono text-[11px]">
-            {(
-              [
-                ["macros", "Macros"],
-                ["nutrients", "Fibre · Sugar · Sodium"],
-              ] as [NutrMode, string][]
-            ).map(([m, label]) => (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex border rule font-mono text-[11px]">
+              {(
+                [
+                  ["list", "List"],
+                  ["timeline", "Timeline"],
+                ] as [DiaryView, string][]
+              ).map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setViewPersist(v)}
+                  className={`px-3 py-1.5 ${view === v ? "bg-raised text-ink" : "text-muted"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {view === "list" && (
               <button
-                key={m}
-                onClick={() => setModePersist(m)}
-                className={`px-3 py-1.5 ${
-                  mode === m ? "bg-raised text-ink" : "text-muted"
+                title="Pick logged foods and save them as a meal — on a desktop, shift-click a row to start"
+                onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+                className={`border rule px-3 py-1.5 font-mono text-[11px] ${
+                  selecting ? "bg-raised text-ink" : "text-muted active:bg-raised md:hover:text-ink"
                 }`}
               >
-                {label}
+                {selecting ? "✕ Cancel select" : "☑ Select → meal"}
               </button>
-            ))}
+            )}
           </div>
+          {view === "list" && (
+            <div className="inline-flex border rule font-mono text-[11px]">
+              {(
+                [
+                  ["macros", "Macros"],
+                  ["nutrients", "Fibre · Sugar · Sodium"],
+                ] as [NutrMode, string][]
+              ).map(([m, label]) => (
+                <button
+                  key={m}
+                  onClick={() => setModePersist(m)}
+                  className={`px-3 py-1.5 ${
+                    mode === m ? "bg-raised text-ink" : "text-muted"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {day.data && (
+      {day.data && view === "timeline" && (
+        <>
+          <DiaryTimeline
+            entries={slotList.flatMap((s) => day.data!.slots[s.name] ?? [])}
+            onPick={(entry) => setEditing(entry)}
+          />
+          {editing && (
+            <div className="mt-4">
+              <EntryEditor
+                entry={editing}
+                slots={slotList}
+                onClose={() => setEditing(null)}
+                onChanged={refresh}
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {day.data && view === "list" && (
         <div className="mt-3">
           {slotList.map((slot) => {
             const entries = day.data!.slots[slot.name] ?? [];
