@@ -219,7 +219,7 @@ export const useRecentFoods = (slot?: string) =>
   useQuery({
     queryKey: ["recent", slot ?? "all"],
     queryFn: () =>
-      http<RecentFood[]>(`/foods/recent?limit=20${slot ? `&slot=${slot}` : ""}`),
+      http<RecentFood[]>(`/foods/recent?limit=500${slot ? `&slot=${slot}` : ""}`),
   });
 
 export const useFood = (id: number | null) =>
@@ -353,10 +353,40 @@ export const apiSetAiConfig = (patch: {
   timeoutMs?: number;
 }) => http<AiConfig>("/ai/config", { method: "PUT", body: JSON.stringify(patch) });
 
-export const apiEstimatePhoto = (imageBase64: string, mimeType: string, description?: string) =>
+export const apiEstimatePhoto = (
+  imageBase64: string,
+  mimeType: string,
+  description?: string,
+  totalWeightG?: number,
+) =>
   http<MealEstimate>("/ai/estimate", {
     method: "POST",
-    body: JSON.stringify({ imageBase64, mimeType, description: description || undefined }),
+    body: JSON.stringify({
+      imageBase64,
+      mimeType,
+      description: description || undefined,
+      totalWeightG: totalWeightG && totalWeightG > 0 ? totalWeightG : undefined,
+    }),
+  });
+
+/** Macros read straight off a photographed nutrition panel, per 100 g. */
+export interface LabelReading {
+  name?: string;
+  brand?: string;
+  servingG?: number;
+  energyKcal?: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  satFatG?: number;
+  sugarsG?: number;
+  fibreG?: number;
+  sodiumMg?: number;
+}
+export const apiReadLabel = (imageBase64: string, mimeType: string) =>
+  http<LabelReading>("/ai/read-label", {
+    method: "POST",
+    body: JSON.stringify({ imageBase64, mimeType }),
   });
 
 export const apiTestAi = () => http<AiTestResult>("/ai/test", { method: "POST" });

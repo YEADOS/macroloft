@@ -332,10 +332,24 @@ export function buildMcpServer(): McpServer {
           .describe(
             "Optional free-text hint from the user about the food: ingredients not visible in the photo, portion size, or how it was cooked.",
           ),
+        total_weight_g: z
+          .number()
+          .positive()
+          .optional()
+          .describe(
+            "Optional weighed total for the whole plate (food only, grams). When set, the item weights are scaled so their quantityG values sum to about this.",
+          ),
       },
     },
-    async ({ image_base64, mime_type, description }) =>
-      json(await vision.estimateFoodFromPhoto(image_base64, mime_type ?? "image/jpeg", description)),
+    async ({ image_base64, mime_type, description, total_weight_g }) =>
+      json(
+        await vision.estimateFoodFromPhoto(
+          image_base64,
+          mime_type ?? "image/jpeg",
+          description,
+          total_weight_g,
+        ),
+      ),
   );
 
   server.registerTool(

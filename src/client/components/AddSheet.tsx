@@ -9,6 +9,7 @@ import {
   apiLogFood,
   apiLogMeal,
   apiLogQuick,
+  apiReadLabel,
   useAiConfig,
   useFoodSearch,
   useMeals,
@@ -322,6 +323,12 @@ export default function AddSheet({
   // Optional user hint sent with the photo — ingredients the camera can't see
   // (honey on the rice cakes), cooking method, or portion.
   const [photoHint, setPhotoHint] = useState("");
+  // Optional weighed total for the whole plate — pins the sum of item weights.
+  const [photoWeight, setPhotoWeight] = useState("");
+  // Label scan (New food tab): the picked panel photo is held here so a bad
+  // shot can be retaken before it's sent — the AI call only fires on the button.
+  const [labelImg, setLabelImg] = useState<{ base64: string; mimeType: string } | null>(null);
+  const [labelBusy, setLabelBusy] = useState(false);
   const search = useFoodSearch(q);
   const recent = useRecentFoods();
   const meals = useMeals();
@@ -378,13 +385,48 @@ export default function AddSheet({
     setError(null);
     try {
       const { base64, mimeType } = await downscaleImage(file);
-      setEstimate(await apiEstimatePhoto(base64, mimeType, photoHint.trim()));
+      const weight = Number(photoWeight) || undefined;
+      setEstimate(await apiEstimatePhoto(base64, mimeType, photoHint.trim(), weight));
       setPhoto({ base64, mimeType });
       setPhotoHint("");
+      setPhotoWeight("");
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setPhotoBusy(false);
+    }
+  };
+
+  // Label scan: read the held panel photo and spill it into the new-food form,
+  // per 100 g, so the user only names it and checks the numbers before saving.
+  const readLabel = async () => {
+    if (!labelImg) return;
+    setLabelBusy(true);
+    setError(null);
+    try {
+      const r = await apiReadLabel(labelImg.base64, labelImg.mimeType);
+      const s = (n: number | undefined) => (n == null ? "" : String(Math.round(n * 10) / 10));
+      setNf((prev) => ({
+        ...prev,
+        name: r.name || prev.name,
+        brand: r.brand || prev.brand,
+        protein: s(r.proteinG),
+        carbs: s(r.carbsG),
+        fat: s(r.fatG),
+        kcal: s(r.energyKcal),
+        satfat: s(r.satFatG),
+        sugars: s(r.sugarsG),
+        fibre: s(r.fibreG),
+        sodium: s(r.sodiumMg),
+        // Label numbers are per 100 g; keep that basis, but note the serving.
+        basis: "100g",
+        servingG: r.servingG != null ? String(r.servingG) : prev.servingG,
+      }));
+      setLabelImg(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLabelBusy(false);
     }
   };
 
@@ -603,6 +645,21 @@ export default function AddSheet({
                     used, or how much of it you ate.
                   </span>
                 </label>
+                <label className="mb-3 flex flex-col gap-1">
+                  <span className="plaque">Total weight (g, optional)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={photoWeight}
+                    onChange={(e) => setPhotoWeight(e.target.value)}
+                    disabled={photoBusy}
+                    placeholder="e.g. 320"
+                    className="font-mono"
+                  />
+                  <span className="font-mono text-[11px] text-muted">
+                    If you weighed the plate, the item weights are scaled to add up to this.
+                  </span>
+                </label>
                 <label
                   className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed rule py-12 text-center ${
                     photoBusy ? "opacity-60" : "cursor-pointer active:bg-raised md:hover:bg-raised"
@@ -698,6 +755,63 @@ export default function AddSheet({
 
         {tab === "new" && (
           <div className="mt-4 space-y-3">
+            {aiConfig.data?.enabled &&
+              (labelImg ? (
+                <div className="flex items-center gap-3 border rule p-2">
+                  <img
+                    src={`data:${labelImg.mimeType};base64,${labelImg.base64}`}
+                    alt="Nutrition panel"
+                    className="h-16 w-16 shrink-0 rounded object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <button
+                      disabled={labelBusy}
+                      onClick={readLabel}
+                      className="glow w-full py-2 font-display text-xs font-bold uppercase tracking-wider disabled:opacity-40"
+                      style={{ background: "var(--accent)", color: "#181614" }}
+                    >
+                      {labelBusy ? "Reading…" : "Read macros"}
+                    </button>
+                    <button
+                      disabled={labelBusy}
+                      onClick={() => setLabelImg(null)}
+                      className="mt-1 w-full font-mono text-[11px] text-muted active:text-ink md:hover:text-ink disabled:opacity-40"
+                    >
+                      Discard photo
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label
+                  className={`flex items-center justify-center gap-2 border-2 border-dashed rule py-3 text-center ${
+                    labelBusy ? "opacity-60" : "cursor-pointer active:bg-raised md:hover:bg-raised"
+                  }`}
+                >
+                  <span className="font-mono text-lg" style={{ color: "var(--accent)" }}>
+                    ☐
+                  </span>
+                  <div className="font-mono text-xs text-muted">
+                    Scan a nutrition label to auto-fill the macros
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={labelBusy}
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      setError(null);
+                      try {
+                        setLabelImg(await downscaleImage(file));
+                      } catch (err) {
+                        setError((err as Error).message);
+                      }
+                    }}
+                  />
+                </label>
+              ))}
             <div className="flex items-center gap-3">
               <span className="plaque">Nutrients are</span>
               <div className="inline-flex border rule font-mono text-[11px]">

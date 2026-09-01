@@ -34,7 +34,7 @@ api.get("/foods/search", (c) => {
   return c.json(foods.searchFoods(q, limit));
 });
 api.get("/foods/recent", (c) => {
-  const limit = Math.min(Number(c.req.query("limit") ?? 20), 50);
+  const limit = Math.min(Number(c.req.query("limit") ?? 20), 500);
   const s = c.req.query("slot");
   return c.json(foods.recentFoods(limit, s || undefined));
 });
@@ -283,11 +283,30 @@ api.post(
         .string()
         .regex(/^image\/(jpeg|png|webp|gif)$/, "expected image/jpeg, image/png, image/webp or image/gif"),
       description: z.string().optional(),
+      totalWeightG: z.number().positive().optional(),
     }),
   ),
   async (c) => {
-    const { imageBase64, mimeType, description } = c.req.valid("json");
-    return c.json(await vision.estimateFoodFromPhoto(imageBase64, mimeType, description));
+    const { imageBase64, mimeType, description, totalWeightG } = c.req.valid("json");
+    return c.json(
+      await vision.estimateFoodFromPhoto(imageBase64, mimeType, description, totalWeightG),
+    );
+  },
+);
+api.post(
+  "/ai/read-label",
+  zValidator(
+    "json",
+    z.object({
+      imageBase64: z.string().min(1),
+      mimeType: z
+        .string()
+        .regex(/^image\/(jpeg|png|webp|gif)$/, "expected image/jpeg, image/png, image/webp or image/gif"),
+    }),
+  ),
+  async (c) => {
+    const { imageBase64, mimeType } = c.req.valid("json");
+    return c.json(await vision.readNutritionLabel(imageBase64, mimeType));
   },
 );
 api.get("/ai/config", (c) => c.json(maskedAiConfig()));

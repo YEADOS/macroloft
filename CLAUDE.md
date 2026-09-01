@@ -111,8 +111,13 @@ The service lives in `src/server/services/vision.ts` +
 plain `fetch`, no SDK). Config is in the `settings` table (`ai_*` keys) and
 editable via the Settings page / `GET|PUT /api/ai/config`; the API key also
 falls back to the `AI_API_KEY` env var and is never returned in GETs. It's off
-by default (`ai_enabled=false`). Endpoints: `/api/ai/estimate`, `/api/ai/config`,
-`/api/ai/test`; MCP mirror: `estimate_food_from_photo`. See `docs/AI-PHOTO.md`.
+by default (`ai_enabled=false`). Endpoints: `/api/ai/estimate` (optionally takes a
+weighed `totalWeightG` for the whole plate — the item weights are scaled to sum to
+it), `/api/ai/read-label` (reads macros straight off a photographed nutrition panel,
+per 100 g, to seed a new custom food — reached from the New food tab's "Scan label"
+button, which holds the photo and only calls the model on the button, not on
+capture), `/api/ai/config`, `/api/ai/test`; MCP mirror: `estimate_food_from_photo`
+(with `total_weight_g`). See `docs/AI-PHOTO.md`.
 
 ## Rules
 
