@@ -114,9 +114,12 @@ falls back to the `AI_API_KEY` env var and is never returned in GETs. It's off
 by default (`ai_enabled=false`). Endpoints: `/api/ai/estimate` (optionally takes a
 weighed `totalWeightG` for the whole plate — the item weights are scaled to sum to
 it), `/api/ai/read-label` (reads macros straight off a photographed nutrition panel,
-per 100 g, to seed a new custom food — reached from the New food tab's "Scan label"
-button, which holds the photo and only calls the model on the button, not on
-capture), `/api/ai/config`, `/api/ai/test`; MCP mirror: `estimate_food_from_photo`
+per 100 g, plus the serving size and servings-per-pack, to seed a new custom food
+— reached from the New food tab's label dropzone, which fires the model straight
+off the capture like the meal scanner, no separate "read" step. The form's
+100 g ⇄ serving toggle rescales the entered macros by the serving size, so the
+panel fills both bases; an "I had (g/mL)" field logs a partial serving, e.g. a
+third of a 425 mL can), `/api/ai/config`, `/api/ai/test`; MCP mirror: `estimate_food_from_photo`
 (with `total_weight_g`). See `docs/AI-PHOTO.md`.
 
 ## Rules

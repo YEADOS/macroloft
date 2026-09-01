@@ -327,9 +327,8 @@ export default function AddSheet({
   const [photoHint, setPhotoHint] = useState("");
   // Optional weighed total for the whole plate — pins the sum of item weights.
   const [photoWeight, setPhotoWeight] = useState("");
-  // Label scan (New food tab): the picked panel photo is held here so a bad
-  // shot can be retaken before it's sent — the AI call only fires on the button.
-  const [labelImg, setLabelImg] = useState<{ base64: string; mimeType: string } | null>(null);
+  // Label scan (New food tab): the AI read fires straight off the capture, so
+  // there's no held-photo state — just a spinner while it's reading.
   const [labelBusy, setLabelBusy] = useState(false);
   const search = useFoodSearch(q);
   const recent = useRecentFoods();
@@ -364,10 +363,43 @@ export default function AddSheet({
     sodium: "",
     basis: "100g" as "100g" | "serving",
     servingG: "",
+    servingsPerPack: "",
     itemsPer: "",
+    // How much of the food was actually eaten (g / mL) — what gets logged.
+    // Defaults to one serving when a label is scanned; a partial pour (a third
+    // of a 425 mL can) is just a smaller number here.
+    hadG: "",
   });
   const perServing = nf.basis === "serving";
   const servingG = Number(nf.servingG) || 0;
+  // What actually gets logged: the "I had" amount, or one serving / 100 g.
+  const hadG = Number(nf.hadG) || 0;
+  const logG = hadG > 0 ? hadG : perServing || servingG > 0 ? servingG || 100 : 100;
+
+  // Switching the 100 g ⇄ serving basis rescales the entered macros so the
+  // numbers on screen stay truthful for the basis now selected (needs a serving
+  // size to convert; without one it's just a relabel).
+  const switchBasis = (b: "100g" | "serving") =>
+    setNf((prev) => {
+      if (prev.basis === b) return prev;
+      const s = Number(prev.servingG) || 0;
+      if (s <= 0) return { ...prev, basis: b };
+      const factor = b === "serving" ? s / 100 : 100 / s;
+      const conv = (v: string) =>
+        v === "" ? "" : String(Math.round(Number(v) * factor * 10) / 10);
+      return {
+        ...prev,
+        basis: b,
+        protein: conv(prev.protein),
+        carbs: conv(prev.carbs),
+        fat: conv(prev.fat),
+        kcal: conv(prev.kcal),
+        satfat: conv(prev.satfat),
+        sugars: conv(prev.sugars),
+        fibre: conv(prev.fibre),
+        sodium: conv(prev.sodium),
+      };
+    });
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -399,14 +431,16 @@ export default function AddSheet({
     }
   };
 
-  // Label scan: read the held panel photo and spill it into the new-food form,
-  // per 100 g, so the user only names it and checks the numbers before saving.
-  const readLabel = async () => {
-    if (!labelImg) return;
+  // Label scan: read the panel photo and spill it into the new-food form, per
+  // 100 g, so the user only names it and checks the numbers before saving. Fires
+  // straight off the capture — like the meal scanner, the picker itself is the
+  // retake, so there's no separate "read" step. The serving size and servings
+  // per pack come along too, and "I had" seeds to one serving.
+  const readLabel = async (img: { base64: string; mimeType: string }) => {
     setLabelBusy(true);
     setError(null);
     try {
-      const r = await apiReadLabel(labelImg.base64, labelImg.mimeType);
+      const r = await apiReadLabel(img.base64, img.mimeType);
       const s = (n: number | undefined) => (n == null ? "" : String(Math.round(n * 10) / 10));
       setNf((prev) => ({
         ...prev,
@@ -420,11 +454,13 @@ export default function AddSheet({
         sugars: s(r.sugarsG),
         fibre: s(r.fibreG),
         sodium: s(r.sodiumMg),
-        // Label numbers are per 100 g; keep that basis, but note the serving.
+        // Label numbers are per 100 g; keep that basis — flip the toggle to see
+        // them per serving. Note the serving size, pack count, and seed "I had".
         basis: "100g",
         servingG: r.servingG != null ? String(r.servingG) : prev.servingG,
+        servingsPerPack: r.servingsPerPack != null ? String(r.servingsPerPack) : prev.servingsPerPack,
+        hadG: r.servingG != null ? String(r.servingG) : prev.hadG,
       }));
-      setLabelImg(null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -778,63 +814,37 @@ export default function AddSheet({
 
         {tab === "new" && (
           <div className="mt-4 space-y-3">
-            {aiConfig.data?.enabled &&
-              (labelImg ? (
-                <div className="flex items-center gap-3 border rule p-2">
-                  <img
-                    src={`data:${labelImg.mimeType};base64,${labelImg.base64}`}
-                    alt="Nutrition panel"
-                    className="h-16 w-16 shrink-0 rounded object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <button
-                      disabled={labelBusy}
-                      onClick={readLabel}
-                      className="glow w-full py-2 font-display text-xs font-bold uppercase tracking-wider disabled:opacity-40"
-                      style={{ background: "var(--accent)", color: "#181614" }}
-                    >
-                      {labelBusy ? "Reading…" : "Read macros"}
-                    </button>
-                    <button
-                      disabled={labelBusy}
-                      onClick={() => setLabelImg(null)}
-                      className="mt-1 w-full font-mono text-[11px] text-muted active:text-ink md:hover:text-ink disabled:opacity-40"
-                    >
-                      Discard photo
-                    </button>
-                  </div>
+            {aiConfig.data?.enabled && (
+              <label
+                className={`flex items-center justify-center gap-2 border-2 border-dashed rule py-3 text-center ${
+                  labelBusy ? "opacity-60" : "cursor-pointer active:bg-raised md:hover:bg-raised"
+                }`}
+              >
+                <span className="font-mono text-lg" style={{ color: "var(--accent)" }}>
+                  ☐
+                </span>
+                <div className="font-mono text-xs text-muted">
+                  {labelBusy ? "Reading label…" : "Scan a nutrition label to auto-fill the macros"}
                 </div>
-              ) : (
-                <label
-                  className={`flex items-center justify-center gap-2 border-2 border-dashed rule py-3 text-center ${
-                    labelBusy ? "opacity-60" : "cursor-pointer active:bg-raised md:hover:bg-raised"
-                  }`}
-                >
-                  <span className="font-mono text-lg" style={{ color: "var(--accent)" }}>
-                    ☐
-                  </span>
-                  <div className="font-mono text-xs text-muted">
-                    Scan a nutrition label to auto-fill the macros
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    disabled={labelBusy}
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      if (!file) return;
-                      setError(null);
-                      try {
-                        setLabelImg(await downscaleImage(file));
-                      } catch (err) {
-                        setError((err as Error).message);
-                      }
-                    }}
-                  />
-                </label>
-              ))}
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={labelBusy}
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    setError(null);
+                    try {
+                      await readLabel(await downscaleImage(file));
+                    } catch (err) {
+                      setError((err as Error).message);
+                    }
+                  }}
+                />
+              </label>
+            )}
             <div className="flex items-center gap-3">
               <span className="plaque">Nutrients are</span>
               <div className="inline-flex border rule font-mono text-[11px]">
@@ -846,7 +856,7 @@ export default function AddSheet({
                 ).map(([b, label]) => (
                   <button
                     key={b}
-                    onClick={() => setNf({ ...nf, basis: b })}
+                    onClick={() => switchBasis(b)}
                     className={`px-3 py-1.5 ${nf.basis === b ? "bg-raised text-ink" : "text-muted"}`}
                   >
                     {label}
@@ -854,15 +864,26 @@ export default function AddSheet({
                 ))}
               </div>
             </div>
-            {perServing && (
+            {(perServing || servingG > 0) && (
               <div className="grid grid-cols-2 gap-3">
                 <label className="flex flex-col gap-1">
-                  <span className="plaque">Serving size (g)</span>
+                  <span className="plaque">Serving size (g / mL)</span>
                   <input
                     type="number"
                     inputMode="decimal"
                     value={nf.servingG}
                     onChange={(e) => setNf({ ...nf, servingG: e.target.value })}
+                    className="font-mono"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="plaque">Servings per pack (optional)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={nf.servingsPerPack}
+                    onChange={(e) => setNf({ ...nf, servingsPerPack: e.target.value })}
+                    placeholder="e.g. 3"
                     className="font-mono"
                   />
                 </label>
@@ -874,6 +895,17 @@ export default function AddSheet({
                     value={nf.itemsPer}
                     onChange={(e) => setNf({ ...nf, itemsPer: e.target.value })}
                     placeholder="e.g. 3 rice cakes"
+                    className="font-mono"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="plaque">I had (g / mL)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={nf.hadG}
+                    onChange={(e) => setNf({ ...nf, hadG: e.target.value })}
+                    placeholder={servingG > 0 ? String(servingG) : "1 serving"}
                     className="font-mono"
                   />
                 </label>
@@ -922,12 +954,17 @@ export default function AddSheet({
                   const r1 = (n: number) => Math.round(n * 10) / 10;
                   const factor = perServing ? 100 / servingG : 1;
                   const items = Math.floor(Number(nf.itemsPer)) || 0;
-                  const servings = perServing
-                    ? [
-                        { name: "1 serving", grams: servingG },
-                        ...(items >= 2 ? [{ name: "1 piece", grams: r1(servingG / items) }] : []),
-                      ]
-                    : undefined;
+                  const pack = Number(nf.servingsPerPack) || 0;
+                  // A known serving size gives ready-made portions to log later —
+                  // one serving, one piece, the whole pack.
+                  const servings =
+                    servingG > 0
+                      ? [
+                          { name: "1 serving", grams: servingG },
+                          ...(items >= 2 ? [{ name: "1 piece", grams: r1(servingG / items) }] : []),
+                          ...(pack >= 2 ? [{ name: "1 pack", grams: r1(servingG * pack) }] : []),
+                        ]
+                      : undefined;
                   // Optional micros: send only when filled, scaled per 100 g
                   // by the same factor as the macros (sodium is mg, same scaling).
                   const micro = (v: string) =>
@@ -947,7 +984,7 @@ export default function AddSheet({
                   });
                   await apiLogFood({
                     foodId: food.id,
-                    quantityG: perServing ? servingG : 100,
+                    quantityG: logG,
                     slot,
                     date,
                     time: time || undefined,
@@ -957,7 +994,7 @@ export default function AddSheet({
               className="glow w-full py-2.5 font-display text-sm font-bold uppercase tracking-wider disabled:opacity-40"
               style={{ background: "var(--accent)", color: "#181614" }}
             >
-              {perServing ? "Create & log 1 serving" : "Create & log 100 g"}
+              {`Create & log ${Math.round(logG * 10) / 10} g`}
             </button>
           </div>
         )}

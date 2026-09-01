@@ -184,7 +184,8 @@ Respond with ONLY a JSON object (no prose, no code fences) in this exact shape:
 {
   "name": "product name if legible on the pack, otherwise omit",
   "brand": "brand if legible, otherwise omit",
-  "servingG": number,   // grams (or mL) in ONE serving, from "Serving size" — omit if not shown
+  "servingG": number,       // grams (or mL) in ONE serving, from the "Serving size" line — omit only if genuinely absent
+  "servingsPerPack": number,// number of servings the whole pack contains, from "Servings per package" — omit if not shown
   "proteinG": number,   // grams of protein PER 100 G (or per 100 mL)
   "carbsG": number,     // grams of total carbohydrate PER 100 G
   "fatG": number,       // grams of total fat PER 100 G
@@ -196,7 +197,8 @@ Respond with ONLY a JSON object (no prose, no code fences) in this exact shape:
 }
 
 Rules:
-- Australian panels have two columns: "per serving" and "per 100 g". Always read the PER 100 G column (or per 100 mL for drinks). Never the per-serving column.
+- Australian panels have two columns: "per serving" and "per 100 g". Report every macro from the PER 100 G column (or per 100 mL for drinks). Never put a per-serving macro figure in these fields.
+- The header above the columns prints "Serving size" (e.g. "Serving size: 425 mL") and usually "Servings per package". Read both — servingG is the serve size number, servingsPerPack is the count. These describe the pack, not a column; do not skip them just because you are reading the per-100 g macros.
 - Read only what is printed. If a row is absent, omit that field — never guess it.
 - "Sugars" is the indented sub-row under total carbohydrate; "Saturated" is the sub-row under total fat. Report the totals for carbsG and fatG, not the sub-rows.
 - Sodium is usually in mg; if it is given in g, multiply by 1000.
@@ -210,6 +212,8 @@ export const labelReadingSchema = z.object({
   brand: z.string().min(1).optional(),
   /** Grams in one serving, straight off the "Serving size" line. */
   servingG: z.number().positive().optional(),
+  /** How many servings the whole pack holds, off the "Servings per package" line. */
+  servingsPerPack: z.number().positive().optional(),
   energyKcal: z.number().nonnegative().optional(),
   proteinG: z.number().nonnegative(),
   carbsG: z.number().nonnegative(),

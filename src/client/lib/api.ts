@@ -382,6 +382,7 @@ export interface LabelReading {
   name?: string;
   brand?: string;
   servingG?: number;
+  servingsPerPack?: number;
   energyKcal?: number;
   proteinG: number;
   carbsG: number;
