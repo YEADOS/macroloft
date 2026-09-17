@@ -28,10 +28,10 @@ export function openAiProvider(cfg: AiConfig): AiProvider {
               role: "user",
               content: [
                 { type: "text", text: req.prompt },
-                {
+                ...(req.images ?? []).map((img) => ({
                   type: "image_url",
-                  image_url: { url: `data:${req.mimeType};base64,${req.imageBase64}` },
-                },
+                  image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+                })),
               ],
             },
           ],

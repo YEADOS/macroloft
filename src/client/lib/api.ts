@@ -361,18 +361,27 @@ export const apiSetAiConfig = (patch: {
   timeoutMs?: number;
 }) => http<AiConfig>("/ai/config", { method: "PUT", body: JSON.stringify(patch) });
 
+/** Estimate a meal from one or more photos (extra angles help the model judge scale). */
 export const apiEstimatePhoto = (
-  imageBase64: string,
-  mimeType: string,
+  images: { base64: string; mimeType: string }[],
   description?: string,
   totalWeightG?: number,
 ) =>
   http<MealEstimate>("/ai/estimate", {
     method: "POST",
     body: JSON.stringify({
-      imageBase64,
-      mimeType,
+      images: images.map((i) => ({ imageBase64: i.base64, mimeType: i.mimeType })),
       description: description || undefined,
+      totalWeightG: totalWeightG && totalWeightG > 0 ? totalWeightG : undefined,
+    }),
+  });
+
+/** Estimate a meal from a written description alone — no photo. */
+export const apiEstimateText = (description: string, totalWeightG?: number) =>
+  http<MealEstimate>("/ai/estimate", {
+    method: "POST",
+    body: JSON.stringify({
+      description,
       totalWeightG: totalWeightG && totalWeightG > 0 ? totalWeightG : undefined,
     }),
   });

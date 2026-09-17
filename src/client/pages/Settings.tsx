@@ -103,6 +103,19 @@ export default function Settings() {
         <span className="font-mono text-sm text-timber">⇄</span>
       </NavLink>
 
+      <NavLink
+        to="/features"
+        className="mb-6 flex items-center justify-between gap-4 border-b rule pb-5 active:bg-raised md:hover:text-amber"
+      >
+        <div>
+          <h2 className="plaque mb-1">Features</h2>
+          <p className="font-mono text-[11px] text-muted">
+            What this app can do
+          </p>
+        </div>
+        <span className="font-mono text-sm text-timber">☰</span>
+      </NavLink>
+
       <section className="space-y-5">
         <div className="flex items-start justify-between gap-4 border-b rule pb-5">
           <div>

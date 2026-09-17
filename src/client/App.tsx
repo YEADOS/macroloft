@@ -6,6 +6,7 @@ import Weight from "./pages/Weight";
 import Goals from "./pages/Goals";
 import Settings from "./pages/Settings";
 import Convert from "./pages/Convert";
+import Features from "./pages/Features";
 import { PepsiRail } from "./components/PepsiCounter";
 
 const tabs = [
@@ -76,6 +77,7 @@ export default function App() {
           <Route path="/goals" element={<Goals />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/convert" element={<Convert />} />
+          <Route path="/features" element={<Features />} />
         </Routes>
       </main>
 

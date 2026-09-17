@@ -7,7 +7,7 @@ const { migrate } = await import("drizzle-orm/bun-sqlite/migrator");
 const { extractJson } = await import("./ai/extract");
 const { getProvider } = await import("./ai/provider");
 const config = await import("./ai/config");
-const { estimateFoodFromPhoto } = await import("./vision");
+const { estimateFoodFromPhoto, estimateFoodFromText } = await import("./vision");
 
 beforeAll(() => {
   migrate(db, { migrationsFolder: `${import.meta.dir}/../../../drizzle` });
@@ -91,8 +91,7 @@ describe("adapters", () => {
     const calls = stubFetch({ choices: [{ message: { content: '{"ok":true}' } }] });
     const provider = getProvider({ ...base, provider: "openai-compatible" });
     const out = await provider.complete({
-      imageBase64: "AAAA",
-      mimeType: "image/jpeg",
+      images: [{ base64: "AAAA", mimeType: "image/jpeg" }],
       prompt: "hi",
       timeoutMs: 5000,
     });
@@ -111,8 +110,7 @@ describe("adapters", () => {
     const calls = stubFetch({ content: [{ text: '{"ok":true}' }] });
     const provider = getProvider({ ...base, baseUrl: "", provider: "anthropic" });
     const out = await provider.complete({
-      imageBase64: "BBBB",
-      mimeType: "image/png",
+      images: [{ base64: "BBBB", mimeType: "image/png" }],
       prompt: "hi",
       timeoutMs: 5000,
     });
@@ -155,7 +153,7 @@ describe("estimateFoodFromPhoto", () => {
 
   test("forwards the user's description to the model", async () => {
     const calls = reply(estimate);
-    const out = await estimateFoodFromPhoto("data:image/jpeg;base64,AAAA", "image/jpeg", "  with honey on top  ");
+    const out = await estimateFoodFromPhoto([{ imageBase64: "data:image/jpeg;base64,AAAA", mimeType: "image/jpeg" }], "  with honey on top  ");
     expect(out.items[0]!.name).toBe("rice cakes");
     const text = prompt(calls);
     expect(text).toContain("with honey on top");
@@ -164,13 +162,13 @@ describe("estimateFoodFromPhoto", () => {
 
   test("omits the description block when none is given", async () => {
     const calls = reply(estimate);
-    await estimateFoodFromPhoto("AAAA", "image/jpeg", "   ");
+    await estimateFoodFromPhoto([{ imageBase64: "AAAA", mimeType: "image/jpeg" }], "   ");
     expect(prompt(calls)).not.toContain("The person who took the photo describes it as");
   });
 
   test("caps an over-long description", async () => {
     const calls = reply(estimate);
-    await estimateFoodFromPhoto("AAAA", "image/jpeg", "x".repeat(900));
+    await estimateFoodFromPhoto([{ imageBase64: "AAAA", mimeType: "image/jpeg" }], "x".repeat(900));
     expect(prompt(calls)).toContain("x".repeat(500));
     expect(prompt(calls)).not.toContain("x".repeat(501));
   });
@@ -183,7 +181,7 @@ describe("estimateFoodFromPhoto", () => {
         item({ name: "avocado", quantityG: 65, proteinG: 2, carbsG: 9, fatG: 15 }),
       ],
     });
-    const out = await estimateFoodFromPhoto("AAAA", "image/jpeg");
+    const out = await estimateFoodFromPhoto([{ imageBase64: "AAAA", mimeType: "image/jpeg" }]);
     expect(out.name).toBe("chicken avo wrap");
     expect(out.items.map((i) => i.name)).toEqual(["chicken breast", "avocado"]);
   });
@@ -191,7 +189,7 @@ describe("estimateFoodFromPhoto", () => {
   describe("portion normalisation", () => {
     const only = async (over: Record<string, unknown>) => {
       reply({ items: [item(over)] });
-      return (await estimateFoodFromPhoto("AAAA", "image/jpeg")).items[0]!;
+      return (await estimateFoodFromPhoto([{ imageBase64: "AAAA", mimeType: "image/jpeg" }])).items[0]!;
     };
 
     test("count x unitGrams wins over a per-piece quantityG", async () => {
@@ -234,17 +232,66 @@ describe("estimateFoodFromPhoto", () => {
       fatG: 0.3,
       servings: [{ name: "as photographed", grams: 118 }],
     });
-    const out = await estimateFoodFromPhoto("AAAA", "image/jpeg");
+    const out = await estimateFoodFromPhoto([{ imageBase64: "AAAA", mimeType: "image/jpeg" }]);
     expect(out.items).toHaveLength(1);
     expect(out.items[0]).toMatchObject({ name: "banana", quantityG: 118 });
   });
 
   test("retries once, then reports what didn't validate", async () => {
     const calls = stubFetch({ choices: [{ message: { content: "sorry, I can't tell" } }] });
-    await expect(estimateFoodFromPhoto("AAAA", "image/jpeg")).rejects.toThrow(
+    await expect(estimateFoodFromPhoto([{ imageBase64: "AAAA", mimeType: "image/jpeg" }])).rejects.toThrow(
       /didn't match the expected format/,
     );
     expect(calls).toHaveLength(2);
     expect(calls[1]!.init.body as string).toContain("could not be parsed");
+  });
+
+  test("sends every photo as its own image block, with a multi-angle note", async () => {
+    const calls = reply(estimate);
+    await estimateFoodFromPhoto([
+      { imageBase64: "AAAA", mimeType: "image/jpeg" },
+      { imageBase64: "BBBB", mimeType: "image/png" },
+    ]);
+    const parts = JSON.parse(calls[0]!.init.body as string).messages[0].content;
+    const images = parts.filter((p: { type: string }) => p.type === "image_url");
+    expect(images).toHaveLength(2);
+    expect(prompt(calls)).toContain("SAME food from different angles");
+  });
+
+  test("no multi-angle note for a single photo", async () => {
+    const calls = reply(estimate);
+    await estimateFoodFromPhoto([{ imageBase64: "AAAA", mimeType: "image/jpeg" }]);
+    expect(prompt(calls)).not.toContain("SAME food from different angles");
+  });
+});
+
+describe("estimateFoodFromText", () => {
+  const estimate = { name: "burger and chips", items: [{ name: "burger", quantityG: 250, proteinG: 15, carbsG: 25, fatG: 20 }] };
+  const prompt = (calls: { init: RequestInit }[]) =>
+    JSON.parse(calls[0]!.init.body as string).messages[0].content[0].text as string;
+  const reply = (body: unknown) =>
+    stubFetch({ choices: [{ message: { content: JSON.stringify(body) } }] });
+
+  beforeAll(() => {
+    config.setAiConfig({
+      enabled: true,
+      provider: "openai-compatible",
+      baseUrl: "http://gpu-box:11434/v1",
+      model: "qwen2.5-vl",
+      apiKey: "sk-test",
+    });
+  });
+
+  test("estimates from words with no image block", async () => {
+    const calls = reply(estimate);
+    const out = await estimateFoodFromText("a Hungry Jack's storm with small chips");
+    expect(out.name).toBe("burger and chips");
+    const parts = JSON.parse(calls[0]!.init.body as string).messages[0].content;
+    expect(parts.some((p: { type: string }) => p.type === "image_url")).toBe(false);
+    expect(prompt(calls)).toContain("a Hungry Jack's storm with small chips");
+  });
+
+  test("rejects an empty description", async () => {
+    await expect(estimateFoodFromText("   ")).rejects.toThrow(/Describe the food/);
   });
 });

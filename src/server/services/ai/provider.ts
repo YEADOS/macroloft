@@ -2,9 +2,13 @@ import type { AiConfig } from "./config";
 import { openAiProvider } from "./openai";
 import { anthropicProvider } from "./anthropic";
 
-export interface VisionRequest {
-  imageBase64: string; // raw base64, no data: prefix
+export interface VisionImage {
+  base64: string; // raw base64, no data: prefix
   mimeType: string; // image/jpeg | image/png | image/webp
+}
+
+export interface VisionRequest {
+  images?: VisionImage[]; // omit/empty for a text-only ask; multiple = same subject, many angles
   prompt: string;
   timeoutMs: number;
 }

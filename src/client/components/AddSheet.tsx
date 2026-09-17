@@ -6,6 +6,7 @@ import {
   apiBarcode,
   apiCreateFood,
   apiEstimatePhoto,
+  apiEstimateText,
   apiLogFood,
   apiLogMeal,
   apiLogQuick,
@@ -320,10 +321,15 @@ export default function AddSheet({
   const [photoBusy, setPhotoBusy] = useState(false);
   const [estimate, setEstimate] = useState<MealEstimate | null>(null);
   // The photo that produced `estimate`, held so it can be saved with the group
-  // once the user confirms — the downscaled bytes, not the original file.
+  // once the user confirms — the first captured shot's downscaled bytes.
   const [photo, setPhoto] = useState<{ base64: string; mimeType: string } | null>(null);
-  // Optional user hint sent with the photo — ingredients the camera can't see
-  // (honey on the rice cakes), cooking method, or portion.
+  // Captured shots waiting to be estimated. More than one = the same meal from
+  // different angles, which the model fuses for a better read on scale. Empty
+  // is fine: with just a description the estimate runs from words alone.
+  const [photos, setPhotos] = useState<{ base64: string; mimeType: string }[]>([]);
+  // Optional user hint sent with the photo(s) — ingredients the camera can't see
+  // (honey on the rice cakes), cooking method, or portion. Doubles as the whole
+  // input when no photo is attached ("a Hungry Jack's storm with small chips").
   const [photoHint, setPhotoHint] = useState("");
   // Optional weighed total for the whole plate — pins the sum of item weights.
   const [photoWeight, setPhotoWeight] = useState("");
@@ -414,14 +420,33 @@ export default function AddSheet({
     }
   };
 
-  const estimateFromFile = async (file: File) => {
+  // Downscale each picked/snapped file and add it to the pending shots. The user
+  // then hits Estimate — this lets them add a second angle before running.
+  const addPhotos = async (files: File[]) => {
+    setError(null);
+    try {
+      const shots = await Promise.all(files.map((f) => downscaleImage(f)));
+      setPhotos((prev) => [...prev, ...shots].slice(0, 6));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  // Run the estimate: from the pending photos if there are any (with the
+  // description as a hint), otherwise from the description alone.
+  const runEstimate = async () => {
+    const hint = photoHint.trim();
+    if (!photos.length && !hint) return;
     setPhotoBusy(true);
     setError(null);
     try {
-      const { base64, mimeType } = await downscaleImage(file);
       const weight = Number(photoWeight) || undefined;
-      setEstimate(await apiEstimatePhoto(base64, mimeType, photoHint.trim(), weight));
-      setPhoto({ base64, mimeType });
+      const est = photos.length
+        ? await apiEstimatePhoto(photos, hint, weight)
+        : await apiEstimateText(hint, weight);
+      setEstimate(est);
+      setPhoto(photos[0] ?? null);
+      setPhotos([]);
       setPhotoHint("");
       setPhotoWeight("");
     } catch (e) {
@@ -689,19 +714,26 @@ export default function AddSheet({
             ) : (
               <>
                 <label className="mb-3 flex flex-col gap-1">
-                  <span className="plaque">Description (optional)</span>
+                  <span className="plaque">
+                    {photos.length ? "Description (optional)" : "Describe it, or add a photo"}
+                  </span>
                   <textarea
                     value={photoHint}
                     onChange={(e) => setPhotoHint(e.target.value)}
                     disabled={photoBusy}
                     rows={2}
                     maxLength={500}
-                    placeholder="rice cakes with a drizzle of honey"
+                    placeholder={
+                      photos.length
+                        ? "rice cakes with a drizzle of honey"
+                        : "a Hungry Jack's storm with a small chips"
+                    }
                     className="resize-none"
                   />
                   <span className="font-mono text-[11px] text-muted">
-                    Anything the camera can't show — hidden ingredients, oil or butter
-                    used, or how much of it you ate.
+                    {photos.length
+                      ? "Anything the camera can't show — hidden ingredients, oil or butter used, or how much of it you ate."
+                      : "Estimate straight from words, or attach a photo below and this becomes a hint."}
                   </span>
                 </label>
                 <label className="mb-3 flex flex-col gap-1">
@@ -719,38 +751,81 @@ export default function AddSheet({
                     If you weighed the plate, the item weights are scaled to add up to this.
                   </span>
                 </label>
+
+                {photos.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {photos.map((p, i) => (
+                      <div key={i} className="relative">
+                        <img
+                          src={`data:${p.mimeType};base64,${p.base64}`}
+                          alt={`Shot ${i + 1}`}
+                          className="h-20 w-20 rounded object-cover"
+                          style={{ border: "1px solid var(--rule)" }}
+                        />
+                        {!photoBusy && (
+                          <button
+                            type="button"
+                            onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                            aria-label={`Remove shot ${i + 1}`}
+                            className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-raised font-mono text-xs text-muted active:text-ink md:hover:text-ink"
+                            style={{ border: "1px solid var(--rule)" }}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <label
-                  className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed rule py-12 text-center ${
-                    photoBusy ? "opacity-60" : "cursor-pointer active:bg-raised md:hover:bg-raised"
+                  className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rule py-8 text-center ${
+                    photoBusy || photos.length >= 6
+                      ? "opacity-60"
+                      : "cursor-pointer active:bg-raised md:hover:bg-raised"
                   }`}
                 >
-                  <span className="font-mono text-4xl" style={{ color: "var(--accent)" }}>
+                  <span className="font-mono text-3xl" style={{ color: "var(--accent)" }}>
                     ☐
                   </span>
-                  <div>
-                    <div className="text-sm">{photoBusy ? "Estimating…" : "Snap a meal"}</div>
-                    <div className="font-mono text-[11px] text-muted">
-                      {photoBusy
-                        ? "The model is reading your photo — this can take a few seconds."
-                        : "Take a photo or pick one — you'll confirm every item before it's logged."}
-                    </div>
+                  <div className="font-mono text-[11px] text-muted">
+                    {photos.length >= 6
+                      ? "Up to 6 photos"
+                      : photos.length
+                        ? "Add another angle — better scale from a second shot"
+                        : "Take a photo or pick one — different angles help the estimate"}
                   </div>
                   <input
                     type="file"
                     accept="image/*"
-                    disabled={photoBusy}
+                    multiple
+                    disabled={photoBusy || photos.length >= 6}
                     className="hidden"
                     onChange={(e) => {
-                      const file = e.target.files?.[0];
+                      const files = Array.from(e.target.files ?? []);
                       e.target.value = "";
-                      if (file) estimateFromFile(file);
+                      if (files.length) addPhotos(files);
                     }}
                   />
                 </label>
+
+                <button
+                  type="button"
+                  onClick={runEstimate}
+                  disabled={photoBusy || (!photos.length && !photoHint.trim())}
+                  className="mt-3 w-full border rule py-2.5 text-sm active:bg-raised disabled:opacity-40 md:hover:bg-raised"
+                >
+                  {photoBusy
+                    ? "Estimating…"
+                    : photos.length
+                      ? `Estimate from ${photos.length} photo${photos.length > 1 ? "s" : ""} ›`
+                      : "Estimate from description ›"}
+                </button>
+
                 <p className="mt-3 font-mono text-[11px] text-muted">
-                  The meal comes back split into its ingredients, each with its own
-                  weight and macros. It's an estimate — check the counts and numbers
-                  on the next screen.
+                  {photoBusy
+                    ? "The model is reading your food — this can take a few seconds."
+                    : "The meal comes back split into its ingredients, each with its own weight and macros. It's an estimate — check the counts and numbers on the next screen."}
                 </p>
               </>
             )}

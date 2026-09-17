@@ -96,18 +96,32 @@ lean and avoids coupling to one vendor.
 **`src/server/services/vision.ts`**
 
 ```ts
+// One or more photos of the SAME meal (extra angles = better scale, not extra
+// servings — the prompt gets a multi-angle note and is told to estimate once).
 export async function estimateFoodFromPhoto(
-  imageBase64: string, mimeType: string, description?: string,
+  images: { imageBase64: string; mimeType: string }[],
+  description?: string, totalWeightG?: number,
 ): Promise<MealEstimate> {
   const cfg = getAiConfig();
   if (!cfg.enabled) throw new Error("AI estimation is off — enable it in Settings…");
-  const raw = await getProvider(cfg).complete({ ...prompt, image… });
+  const raw = await getProvider(cfg).complete({ ...prompt, images… });
   const parsed = normalizeShape(extractJson(raw));   // lenient: fences, prose, bare array
   const result = mealEstimateSchema.safeParse(parsed);
   if (!result.success) { /* one retry with stricter reminder */ }
   return { ...result.data, items: result.data.items.map(normalizePortion) };
 }
+
+// No photo, just words ("a Hungry Jack's storm with small chips"). Same itemised
+// result and the same review + diary-group flow — runs entirely from the text.
+export async function estimateFoodFromText(
+  description: string, totalWeightG?: number,
+): Promise<MealEstimate> { /* shares runMealEstimate() with no images */ }
 ```
+
+`runMealEstimate(prompt, images?)` is the shared core: `images` omitted/empty is a
+text-only ask and the provider drops the image blocks. The Photo tab in
+`AddSheet.tsx` accumulates shots (thumbnails, removable) then hits **Estimate**;
+with no shots but a description it runs `estimateFoodFromText` instead.
 
 ### The shape
 
@@ -163,7 +177,9 @@ one-item meal.
 In `src/server/api/index.ts` (thin wrappers, per the rules):
 
 ```
-POST /api/ai/estimate   {imageBase64, mimeType, description?} JSON → 200 MealEstimate draft
+POST /api/ai/estimate   {images?: [{imageBase64, mimeType}], description?, totalWeightG?} JSON
+                        → 200 MealEstimate draft. Needs images OR description (photos = hint,
+                        no photo = the input); 400 if neither. 1–6 images.
 GET  /api/ai/config     → config with key masked (hasKey/keyFromEnv, never the key)
 PUT  /api/ai/config     → update settings (empty apiKey = keep stored key)
 POST /api/ai/test       → ping provider, return ok/latency/model  (nice for local setup)

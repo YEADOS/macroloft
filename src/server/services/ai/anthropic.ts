@@ -23,10 +23,10 @@ export function anthropicProvider(cfg: AiConfig): AiProvider {
               role: "user",
               content: [
                 { type: "text", text: req.prompt },
-                {
+                ...(req.images ?? []).map((img) => ({
                   type: "image",
-                  source: { type: "base64", media_type: req.mimeType, data: req.imageBase64 },
-                },
+                  source: { type: "base64", media_type: img.mimeType, data: img.base64 },
+                })),
               ],
             },
           ],

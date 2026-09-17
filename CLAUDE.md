@@ -111,9 +111,13 @@ The service lives in `src/server/services/vision.ts` +
 plain `fetch`, no SDK). Config is in the `settings` table (`ai_*` keys) and
 editable via the Settings page / `GET|PUT /api/ai/config`; the API key also
 falls back to the `AI_API_KEY` env var and is never returned in GETs. It's off
-by default (`ai_enabled=false`). Endpoints: `/api/ai/estimate` (optionally takes a
-weighed `totalWeightG` for the whole plate — the item weights are scaled to sum to
-it), `/api/ai/read-label` (reads macros straight off a photographed nutrition panel,
+by default (`ai_enabled=false`). Endpoints: `/api/ai/estimate` takes an `images`
+array (1–6 photos of the *same* meal — extra angles just sharpen the portion/scale
+read, they aren't extra servings — the model is told to estimate once) and/or a
+`description`; with photos the description is a hint, with no photo it *is* the
+input, so you can log "a Hungry Jack's storm with small chips" from words alone.
+Optionally takes a weighed `totalWeightG` for the whole plate — the item weights
+are scaled to sum to it. `/api/ai/read-label` (reads macros straight off a photographed nutrition panel,
 per 100 g, plus the serving size and servings-per-pack, to seed a new custom food
 — reached from the New food tab's label dropzone, which fires the model straight
 off the capture like the meal scanner, no separate "read" step. The form's

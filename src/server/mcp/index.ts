@@ -344,8 +344,7 @@ export function buildMcpServer(): McpServer {
     async ({ image_base64, mime_type, description, total_weight_g }) =>
       json(
         await vision.estimateFoodFromPhoto(
-          image_base64,
-          mime_type ?? "image/jpeg",
+          [{ imageBase64: image_base64, mimeType: mime_type ?? "image/jpeg" }],
           description,
           total_weight_g,
         ),

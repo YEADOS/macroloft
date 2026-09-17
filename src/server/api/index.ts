@@ -283,19 +283,34 @@ api.post(
   zValidator(
     "json",
     z.object({
-      imageBase64: z.string().min(1),
-      mimeType: z
-        .string()
-        .regex(/^image\/(jpeg|png|webp|gif)$/, "expected image/jpeg, image/png, image/webp or image/gif"),
+      // One or more photos of the same meal (different angles improve scale), or
+      // none — with a description, the model estimates from words alone.
+      images: z
+        .array(
+          z.object({
+            imageBase64: z.string().min(1),
+            mimeType: z
+              .string()
+              .regex(
+                /^image\/(jpeg|png|webp|gif)$/,
+                "expected image/jpeg, image/png, image/webp or image/gif",
+              ),
+          }),
+        )
+        .min(1)
+        .max(6)
+        .optional(),
       description: z.string().optional(),
       totalWeightG: z.number().positive().optional(),
     }),
   ),
   async (c) => {
-    const { imageBase64, mimeType, description, totalWeightG } = c.req.valid("json");
-    return c.json(
-      await vision.estimateFoodFromPhoto(imageBase64, mimeType, description, totalWeightG),
-    );
+    const { images, description, totalWeightG } = c.req.valid("json");
+    if (images && images.length)
+      return c.json(await vision.estimateFoodFromPhoto(images, description, totalWeightG));
+    if (description && description.trim())
+      return c.json(await vision.estimateFoodFromText(description, totalWeightG));
+    return c.json({ error: "Provide at least one photo or a description." }, 400);
   },
 );
 api.post(
