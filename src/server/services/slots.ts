@@ -54,6 +54,43 @@ export function updateSlot(id: number, patch: { permanent?: boolean }): DiarySlo
     .get();
 }
 
+/** Fixed anchors: custom sections slot in anywhere, but these never pass each other. */
+const CORE_ORDER = ["breakfast", "lunch", "dinner"];
+
+/**
+ * Re-place a section directly before or after another one, then renumber
+ * positions 0..n. The anchor is the neighbour the user sees, so a hidden
+ * one-off section between them can't swallow the move.
+ */
+export function moveSlot(id: number, anchorId: number, where: "before" | "after"): DiarySlot[] {
+  const slots = listSlots();
+  const slot = slots.find((s) => s.id === id);
+  if (!slot) throw new Error(`no diary section with id ${id}`);
+  const anchor = slots.find((s) => s.id === anchorId);
+  if (!anchor) throw new Error(`no diary section with id ${anchorId}`);
+  if (slot.id === anchor.id) return slots;
+  const rest = slots.filter((s) => s.id !== id);
+  const at = rest.indexOf(anchor) + (where === "after" ? 1 : 0);
+  const next = [...rest.slice(0, at), slot, ...rest.slice(at)];
+  const core = next.map((s) => s.name).filter((n) => CORE_ORDER.includes(n));
+  if (core.join() !== CORE_ORDER.filter((n) => core.includes(n)).join())
+    throw new Error("breakfast, lunch and dinner keep their order — move the other sections around them instead");
+  db.transaction((tx) => {
+    next.forEach((s, i) =>
+      tx.update(diarySlots).set({ position: i }).where(eq(diarySlots.id, s.id)).run(),
+    );
+  });
+  return listSlots();
+}
+
+/** Name-based form for MCP: `{ after: "dinner" }` reads better than ids. */
+export function moveSlotByName(name: string, to: { before?: string; after?: string }): DiarySlot[] {
+  if (!to.before === !to.after)
+    throw new Error('give exactly one of before or after, e.g. after: "dinner"');
+  const byName = (n: string) => listSlots().find((s) => s.name === validateSlot(n))!;
+  return moveSlot(byName(name).id, byName((to.before ?? to.after)!).id, to.before ? "before" : "after");
+}
+
 export function deleteSlot(id: number) {
   const slot = db.select().from(diarySlots).where(eq(diarySlots.id, id)).get();
   if (!slot) throw new Error(`no diary section with id ${id}`);

@@ -5,6 +5,7 @@ import {
   apiDeleteEntry,
   apiDeleteMealLog,
   apiDeleteSlot,
+  apiMoveSlot,
   apiUpdateEntry,
   scanPhotoUrl,
   useDay,
@@ -27,6 +28,8 @@ type DiaryView = "list" | "timeline";
 export type { NutrMode };
 
 const isDefaultSlot = (name: string) => (DEFAULT_SLOTS as readonly string[]).includes(name);
+// Breakfast → lunch → dinner hold their order; everything else moves around them.
+const isCoreSlot = (name: string) => ["breakfast", "lunch", "dinner"].includes(name);
 
 /** Inline editor opened by tapping a row: quantity (grams or servings), move, delete. */
 function EntryEditor({
@@ -708,10 +711,18 @@ export default function Diary() {
 
       {day.data && view === "list" && (
         <div className="mt-3">
-          {slotList.map((slot) => {
+          {slotList.map((slot, i) => {
             const entries = day.data!.slots[slot.name] ?? [];
             const t = day.data!.slotTotals[slot.name];
             const removable = !isDefaultSlot(slot.name) && entries.length === 0 && slot.id > 0;
+            // Move relative to the neighbour on screen, not a hidden one-off between.
+            const above = slotList.slice(0, i).reverse().find((s) => s.id > 0);
+            const below = slotList.slice(i + 1).find((s) => s.id > 0);
+            const movable = !isCoreSlot(slot.name) && slot.id > 0 && !selecting;
+            const move = async (anchor: DiarySlot, where: "before" | "after") => {
+              await apiMoveSlot(slot.id, anchor.id, where);
+              refresh();
+            };
             return (
               <section key={slot.name} className="border-b rule py-6">
                 <div className="flex items-center justify-between gap-3">
@@ -752,12 +763,34 @@ export default function Diary() {
                       );
                     })()
                   ) : (
-                    <button
-                      onClick={() => setAdding(slot.name)}
-                      className="border rule px-3.5 py-1.5 font-mono text-sm text-amber active:bg-raised md:hover:glow"
-                    >
-                      +
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {movable && (
+                        <>
+                          <button
+                            disabled={!above}
+                            onClick={() => above && move(above, "before")}
+                            title={`Move ${slot.name} up`}
+                            className="h-11 w-10 font-mono text-sm text-muted disabled:opacity-25 active:bg-raised md:hover:text-ink"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            disabled={!below}
+                            onClick={() => below && move(below, "after")}
+                            title={`Move ${slot.name} down`}
+                            className="h-11 w-10 font-mono text-sm text-muted disabled:opacity-25 active:bg-raised md:hover:text-ink"
+                          >
+                            ↓
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => setAdding(slot.name)}
+                        className="ml-1 border rule px-3.5 py-1.5 font-mono text-sm text-amber active:bg-raised md:hover:glow"
+                      >
+                        +
+                      </button>
+                    </div>
                   )}
                 </div>
                 {entries.length > 0 && t && (

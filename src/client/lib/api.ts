@@ -412,5 +412,11 @@ export const apiTestAi = () => http<AiTestResult>("/ai/test", { method: "POST" }
 export const apiCreateSlot = (input: { name: string; permanent?: boolean }) =>
   http<DiarySlot>("/slots", { method: "POST", body: JSON.stringify(input) });
 
+export const apiMoveSlot = (id: number, anchorId: number, where: "before" | "after") =>
+  http<DiarySlot[]>(`/slots/${id}/move`, {
+    method: "POST",
+    body: JSON.stringify({ anchorId, where }),
+  });
+
 export const apiDeleteSlot = (id: number) =>
   http<void>(`/slots/${id}`, { method: "DELETE" });

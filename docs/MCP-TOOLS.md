@@ -31,6 +31,7 @@ to use each tool, and search results include ids ready to pass to `log_food`.
 | `get_day` | date? | All entries grouped by slot (each with its resolved `foodName`/`brand`) + `slotList` (ordered sections) + per-slot totals + day totals + active targets + remaining. |
 | `list_slots` | — | The diary's sections in display order, with the `permanent` flag. |
 | `create_slot` | name, permanent=true | New diary section; permanent shows every day, one-off only on days it's used. |
+| `move_slot` | name, before? \| after? | Place a section directly above/below another. Breakfast/lunch/dinner keep their order; everything else goes anywhere. Returns the new order. |
 
 `slot` everywhere is a section name matched case-insensitively against the
 `diary_slots` table (defaults: breakfast, lunch, dinner, snacks). Unknown names

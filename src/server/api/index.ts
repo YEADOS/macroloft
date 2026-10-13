@@ -192,6 +192,17 @@ api.patch(
   zValidator("json", z.object({ permanent: z.boolean().optional() })),
   (c) => c.json(slots.updateSlot(Number(c.req.param("id")), c.req.valid("json"))),
 );
+api.post(
+  "/slots/:id/move",
+  zValidator(
+    "json",
+    z.object({ anchorId: z.number().int(), where: z.enum(["before", "after"]) }),
+  ),
+  (c) => {
+    const { anchorId, where } = c.req.valid("json");
+    return c.json(slots.moveSlot(Number(c.req.param("id")), anchorId, where));
+  },
+);
 api.delete("/slots/:id", (c) => {
   slots.deleteSlot(Number(c.req.param("id")));
   return c.body(null, 204);

@@ -213,6 +213,28 @@ describe("diary sections (slots)", () => {
   test("duplicate section names are rejected", () => {
     expect(() => slots.createSlot("Drinks")).toThrow(/already exists/);
   });
+
+  test("custom sections move anywhere; breakfast/lunch/dinner keep their order", () => {
+    const names = () => slots.listSlots().map((s) => s.name);
+    const id = (n: string) => slots.listSlots().find((s) => s.name === n)!.id;
+    // drinks: below dinner, above snacks
+    slots.moveSlot(id("drinks"), id("snacks"), "before");
+    expect(names().slice(0, 5)).toEqual(["breakfast", "lunch", "dinner", "drinks", "snacks"]);
+    // between breakfast and lunch, by name (the MCP form)
+    slots.moveSlotByName("Drinks", { after: "breakfast" });
+    expect(names().slice(0, 3)).toEqual(["breakfast", "drinks", "lunch"]);
+    // above breakfast is fine too
+    slots.moveSlotByName("drinks", { before: "breakfast" });
+    expect(names()[0]).toBe("drinks");
+    // positions are renumbered densely
+    expect(slots.listSlots().map((s) => s.position)).toEqual(names().map((_, i) => i));
+    // the core three can't pass each other
+    expect(() => slots.moveSlotByName("dinner", { before: "lunch" })).toThrow(/keep their order/);
+    expect(() => slots.moveSlotByName("breakfast", { after: "dinner" })).toThrow(/keep their order/);
+    expect(() => slots.moveSlotByName("drinks", {})).toThrow(/exactly one/);
+    // getDay follows the new order
+    expect(diary.getDay("2026-07-12").slotList[0]!.name).toBe("drinks");
+  });
 });
 
 describe("meals", () => {

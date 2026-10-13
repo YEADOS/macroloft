@@ -232,6 +232,20 @@ export function buildMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "move_slot",
+    {
+      description:
+        "Reposition a diary section: place `name` directly before or after another section (give exactly one of before/after). Breakfast, lunch and dinner always stay in that order relative to each other; everything else (snacks, custom sections) can go anywhere around them. Returns the new full order.",
+      inputSchema: {
+        name: z.string().describe("Section to move (case-insensitive)"),
+        before: z.string().optional().describe("Put it directly above this section"),
+        after: z.string().optional().describe("Put it directly below this section"),
+      },
+    },
+    ({ name, before, after }) => json(slotsSvc.moveSlotByName(name, { before, after })),
+  );
+
+  server.registerTool(
     "list_meals",
     { description: "List saved meals with their items and computed totals.", inputSchema: {} },
     () => json(mealsSvc.listMeals()),

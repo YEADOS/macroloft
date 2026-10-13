@@ -125,13 +125,18 @@ on first use; users can add custom sections ("drinks").
 |---|---|---|
 | id | integer pk | |
 | name | text | unique, case-insensitively matched on log |
-| position | integer | display order |
+| position | integer | display order, renumbered 0..n on every move |
 | permanent | integer 0/1 | permanent slots render every day; one-off slots only on days with entries |
 | created_at | integer | epoch ms |
 
 Deleting a slot is refused while any diary entry references it. `getDay` also
 surfaces orphan slot names found in that day's entries (a since-deleted section
 never hides history).
+
+`moveSlot` re-places a section directly before/after another (the UI's ↑/↓
+anchor on the neighbour actually on screen, so a hidden one-off section can't
+swallow a tap). Breakfast → lunch → dinner always keep their relative order;
+snacks and custom sections can sit anywhere around them.
 
 ## goals
 
