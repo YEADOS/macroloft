@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { apiLogWeight, useWeight } from "../lib/api";
-import { chartColors, shiftDate, todayStr } from "../lib/format";
+import { chartColors, humanDate, shiftDate, todayStr } from "../lib/format";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import Plant from "../components/Plant";
@@ -42,7 +42,9 @@ export default function Weight() {
   const colors = useMemo(chartColors, [document.documentElement.dataset.theme]);
 
   const [input, setInput] = useState("");
+  const [date, setDate] = useState(todayStr());
   const [busy, setBusy] = useState(false);
+  const isToday = date === todayStr();
 
   const domain = useMemo(() => {
     if (!data?.entries.length) return ["auto", "auto"] as const;
@@ -69,23 +71,32 @@ export default function Weight() {
       </header>
 
       {/* log form */}
-      <div className="mb-6 flex gap-2 border-b rule pb-6">
+      <div className="mb-6 flex flex-wrap gap-2 border-b rule pb-6">
         <input
           type="number"
           inputMode="decimal"
           step="0.1"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Today's weight, kg"
+          placeholder={isToday ? "Today's weight, kg" : "Weight, kg"}
           className="w-44 font-mono"
         />
+        <input
+          type="date"
+          value={date}
+          max={todayStr()}
+          onChange={(e) => setDate(e.target.value || todayStr())}
+          className="font-mono"
+          aria-label="Weigh-in date"
+        />
         <button
-          disabled={busy || !Number(input)}
+          disabled={busy || !Number(input) || !date}
           onClick={async () => {
             setBusy(true);
             try {
-              await apiLogWeight({ weightKg: Number(input) });
+              await apiLogWeight({ weightKg: Number(input), date });
               setInput("");
+              setDate(todayStr());
               qc.invalidateQueries({ queryKey: ["weight"] });
               qc.invalidateQueries({ queryKey: ["summary"] });
             } finally {
@@ -98,6 +109,11 @@ export default function Weight() {
           Log
         </button>
       </div>
+      {!isToday && (
+        <div className="-mt-4 mb-6 font-mono text-xs text-muted">
+          Logging for {humanDate(date)}
+        </div>
+      )}
 
       <div className="mb-4 flex gap-1">
         {RANGES.map((r) => (
