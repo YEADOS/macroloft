@@ -39,6 +39,7 @@ bun run db:migrate     # apply migrations + ensure FTS
 bun run import:afcd    # needs data/sources/afcd/nutrient-profiles.xlsx
 bun run import:off     # needs duckdb CLI + data/sources/off/food.parquet
 bun run scripts/refresh-foods.ts   # re-download OFF parquet + re-import
+bun run backup         # VACUUM INTO data/backups/ (safe on the live db), keeps newest 14
 bun test
 docker compose -f docker/compose.yml up --build
 ```

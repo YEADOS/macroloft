@@ -12,6 +12,7 @@
     "db:migrate": "bun run scripts/migrate.ts",
     "import:afcd": "bun run scripts/import-afcd.ts",
     "import:off": "bun run scripts/import-off.ts",
+    "backup": "bun run scripts/backup.ts",
     "test": "bun test"
   },
   "dependencies": {
